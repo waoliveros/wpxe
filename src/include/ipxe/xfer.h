@@ -89,6 +89,11 @@ extern int xfer_deliver ( struct interface *intf,
 	typeof ( int ( object_type, struct io_buffer *iobuf,	\
 		       struct xfer_metadata *meta ) )
 
+extern int xfer_open_child ( struct interface *parent, struct interface *child );		       
+#define xfer_open_child_TYPE( object_type )					\
+	typeof ( int ( object_type,		\
+		       struct interface *child ) )		       
+
 /* Data transfer interface helper functions */
 
 extern int xfer_redirect ( struct interface *xfer, int type, ... );

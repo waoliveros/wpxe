@@ -226,3 +226,22 @@ int xfer_vreopen ( struct interface *intf, int type, va_list args ) {
 	/* Open new location */
 	return xfer_vopen ( intf, type, args );
 }
+
+/**
+ * Open child interface_descriptor
+ *
+ */
+int xfer_open_child ( struct interface *parent, 
+						struct interface *child ) {
+	struct interface *dest;
+	xfer_open_child_TYPE ( void * ) *op =
+		intf_get_dest_op ( parent, xfer_open_child, &dest );
+	void *object = intf_object ( dest );
+	int rc = 0;
+
+	if ( op ) {
+		rc = op ( object, child );
+	}
+	
+	return rc; 
+} 

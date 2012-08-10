@@ -71,6 +71,9 @@ REQUIRE_OBJECT ( serial_console );
 #ifdef CONSOLE_DIRECT_VGA
 REQUIRE_OBJECT ( video_subr );
 #endif
+#ifdef CONSOLE_BTEXT
+REQUIRE_OBJECT ( btext );
+#endif
 #ifdef CONSOLE_PC_KBD
 REQUIRE_OBJECT ( pc_kbd );
 #endif
@@ -127,6 +130,9 @@ REQUIRE_OBJECT ( ftp );
 #endif
 #ifdef DOWNLOAD_PROTO_SLAM
 REQUIRE_OBJECT ( slam );
+#endif
+#ifdef DOWNLOAD_PROTO_BITTORRENT
+REQUIRE_OBJECT ( bittorrent );
 #endif
 
 /*

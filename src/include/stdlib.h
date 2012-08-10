@@ -48,7 +48,9 @@ static inline unsigned int strtoul_charval ( unsigned int charval )
 }
 
 extern unsigned long strtoul ( const char *p, char **endp, int base );
+extern long strtol ( const char *p, char **endp, int base );
 extern unsigned long long strtoull ( const char *p, char **endp, int base );
+extern long long strtoll ( const char *p, char **endp, int base );
 
 
 /*****************************************************************************

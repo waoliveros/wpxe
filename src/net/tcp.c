@@ -18,6 +18,8 @@
 #include <ipxe/tcpip.h>
 #include <ipxe/tcp.h>
 
+#define LISTEN_PORT 45501
+
 /** @file
  *
  * TCP protocol
@@ -113,6 +115,9 @@ struct tcp_connection {
 	struct pending_operation pending_flags;
 	/** Pending operations for transmit queue */
 	struct pending_operation pending_data;
+
+    /** [wao] Hack variable */
+    int new_tcp_created;
 };
 
 /** TCP flags */
@@ -152,6 +157,11 @@ struct tcp_rx_queued_header {
  * List of registered TCP connections
  */
 static LIST_HEAD ( tcp_conns );
+
+/**
+* Reference to listening connection
+*/
+static struct tcp_connection *listener;
 
 /* Forward declarations */
 static struct interface_descriptor tcp_xfer_desc;
@@ -284,34 +294,62 @@ static int tcp_open ( struct interface *xfer, struct sockaddr *peer,
 	unsigned int bind_port;
 	int rc;
 
-	/* Allocate and initialise structure */
-	tcp = zalloc ( sizeof ( *tcp ) );
-	if ( ! tcp )
-		return -ENOMEM;
-	DBGC ( tcp, "TCP %p allocated\n", tcp );
-	ref_init ( &tcp->refcnt, NULL );
-	intf_init ( &tcp->xfer, &tcp_xfer_desc, &tcp->refcnt );
-	timer_init ( &tcp->timer, tcp_expired, &tcp->refcnt );
-	timer_init ( &tcp->wait, tcp_wait_expired, &tcp->refcnt );
-	tcp->prev_tcp_state = TCP_CLOSED;
-	tcp->tcp_state = TCP_STATE_SENT ( TCP_SYN );
-	tcp_dump_state ( tcp );
-	tcp->snd_seq = random();
-	tcp->max_rcv_win = TCP_MAX_WINDOW_SIZE;
-	INIT_LIST_HEAD ( &tcp->tx_queue );
-	INIT_LIST_HEAD ( &tcp->rx_queue );
-	memcpy ( &tcp->peer, st_peer, sizeof ( tcp->peer ) );
+    /* Allocate and initialise structure */
+    tcp = zalloc ( sizeof ( *tcp ) );
+    if ( ! tcp )
+        return -ENOMEM;
+    DBGC ( tcp, "TCP %p allocated\n", tcp );
+    ref_init ( &tcp->refcnt, NULL );
+    intf_init ( &tcp->xfer, &tcp_xfer_desc, &tcp->refcnt );
+    timer_init ( &tcp->timer, tcp_expired, &tcp->refcnt );
+    timer_init ( &tcp->wait, tcp_wait_expired, &tcp->refcnt );
+    tcp->prev_tcp_state = TCP_CLOSED;
+   
+    if ( ! st_peer->st_port )
+    	peer = NULL; 
+    
+    /* If no peer is present, port = 0, we are opening a TCP listening connection. */
+    if ( ! peer ) {
+        /** Set tcp state to LISTEN. */
+        tcp->tcp_state = TCP_LISTEN;
+        DBGC ( tcp, "TCP %p entered LISTEN state\n", tcp );
+        
+        /** Create reference to listening connection */
+        listener = tcp;
+    } else {
+        tcp->tcp_state = TCP_STATE_SENT ( TCP_SYN );
+         DBGC ( tcp, "TCP %p entered ACTIVE connect\n", tcp );	
+    }
+    
+    tcp_dump_state ( tcp );
+    tcp->snd_seq = random();
+    INIT_LIST_HEAD ( &tcp->tx_queue );
+    INIT_LIST_HEAD ( &tcp->rx_queue );
+    
+    /* Do not populate peer if opening a listening connection. */ 
+    if ( peer ) {
+        memcpy ( &tcp->peer, st_peer, sizeof ( struct sockaddr_tcpip ) );
+    }
 
-	/* Bind to local port */
-	bind_port = ( st_local ? ntohs ( st_local->st_port ) : 0 );
-	if ( ( rc = tcp_bind ( tcp, bind_port ) ) != 0 )
-		goto err;
+    /* Bind to local port */
+    bind_port = ( st_local ? ntohs ( st_local->st_port ) : 0 );
+    
+    /* Temporary value, remove after debugging. */
+    if ( ! peer )
+    	bind_port = LISTEN_PORT;
+    
+    if ( ( rc = tcp_bind ( tcp, bind_port ) ) != 0 )
+        goto err;
 
-	/* Start timer to initiate SYN */
-	start_timer_nodelay ( &tcp->timer );
+    /* Do not start timer if opening a listening connection. */
+    if ( peer ) {
+        /* Start timer to initiate SYN */
+        start_timer_nodelay ( &tcp->timer );
+		/* Add a pending operation for the SYN */
+		pending_get ( &tcp->pending_flags );
+    }
 
-	/* Add a pending operation for the SYN */
-	pending_get ( &tcp->pending_flags );
+	
 
 	/* Attach parent interface, transfer reference to connection
 	 * list and return
@@ -746,20 +784,59 @@ static int tcp_xmit_reset ( struct tcp_connection *tcp,
  ***************************************************************************
  */
 
-/**
- * Identify TCP connection by local port number
- *
- * @v local_port	Local port
- * @ret tcp		TCP connection, or NULL
- */
-static struct tcp_connection * tcp_demux ( unsigned int local_port ) {
-	struct tcp_connection *tcp;
+// [wao] modified the demuxer to include peer port in search key 
 
-	list_for_each_entry ( tcp, &tcp_conns, list ) {
-		if ( tcp->local_port == local_port )
-			return tcp;
-	}
-	return NULL;
+/**
+* Identify TCP connection by local port number
+*
+* @v local_port	Local port
+* @ret tcp		TCP connection, or NULL
+*/
+static struct tcp_connection * tcp_demux ( unsigned int local_port,
+                                            unsigned int peer_port ) {
+    struct tcp_connection *tcp;
+    struct tcp_connection *listener;
+    // int i = 1;
+    listener = NULL;
+    // printf ( "\n\n------------------- TCP Connections -------------------\n" );
+    //list_for_each_entry ( tcp, &tcp_conns, list ) {
+    //    printf ( "\t%d.\tlocal_port: %d peer_port %d\n",
+    //                i++, local_port, ntohs ( tcp->peer.st_port ) );
+    //}
+    // printf ( "---------------------------------------------------------\n\n");
+    list_for_each_entry ( tcp, &tcp_conns, list ) {
+        //printf ( "\tTCP CONN. local_port: %d peer_port %d\n",
+        //			local_port, ntohs ( tcp->peer.st_port ) );
+        //if ( tcp->tcp_state == TCP_LISTEN 
+        //            && tcp->local_port == local_port
+        //            && ntohs ( tcp->peer.st_port ) == 0 ) {
+        //    printf( "Entered condition 1.\n" );
+        //    printf ( "\tTCP selected. local_port: %d peer_port %d\n",
+        //            tcp->local_port, ntohs ( tcp->peer.st_port ) );
+        //    return tcp;
+        //} else 
+        if ( tcp->tcp_state == TCP_LISTEN ) {
+        	listener = tcp;
+        }
+        
+        if ( tcp->local_port == local_port 
+           		&& ntohs ( tcp->peer.st_port ) == peer_port
+                && peer_port != 0 ) {
+           // printf( "TCP connection found.\n" );
+           // printf ( "\tTCP selected. local_port: %d peer_port %d\n",
+           //         tcp->local_port, ntohs ( tcp->peer.st_port ) );
+            return tcp;
+        }
+    }
+    
+    /* If no established connection is found, return listener */
+    if ( listener->local_port == local_port ) {
+    	return listener;
+    }
+    
+    /* No established or listening connection found */ 
+    // printf ("\tNO TCP connection selected from table. Returning NULL.\n");
+    return NULL;
 }
 
 /**
@@ -859,14 +936,47 @@ static int tcp_rx_syn ( struct tcp_connection *tcp, uint32_t seq,
 	if ( seq != tcp->rcv_ack )
 		return 0;
 
-	/* Acknowledge SYN */
-	tcp_rx_seq ( tcp, 1 );
+    /* Acknowledge SYN */
+    tcp_rx_seq ( tcp, 1 );
+    
+    /* Handle listening connections */
+    if ( tcp->tcp_state == TCP_LISTEN ) {
+                    
+        /* Mark SYN as received, SYN+ACK as sent */
+        tcp->tcp_state |= ( TCP_STATE_SENT ( TCP_SYN | TCP_ACK ) |
+                            TCP_STATE_RCVD ( TCP_SYN ) );			
+                            
+        /* Create new listening connection. */
+        /**
+        struct tcp_connection *new_tcp;
+        printf ( "New TCP connection created." );
+        new_tcp = zalloc ( sizeof ( *new_tcp ) );
+        if ( ! new_tcp )
+            return -ENOMEM;
+        ref_init ( &new_tcp->refcnt, NULL );
+        intf_init ( &new_tcp->xfer, &tcp_xfer_desc, &new_tcp->refcnt );
+        new_tcp->prev_tcp_state = TCP_CLOSED;
+        new_tcp->tcp_state = TCP_LISTEN;
+        tcp_dump_state ( new_tcp );
+        new_tcp->snd_seq = random();
+        INIT_LIST_HEAD ( &new_tcp->tx_queue );
+        INIT_LIST_HEAD ( &new_tcp->rx_queue );
+        new_tcp->local_port = LISTEN_PORT;
+        */
+        /* Add to list of TCP connections */
+        //list_add_tail ( &new_tcp->list, &tcp_conns );
+        
+        /* Open fresh interface. */
+        //xfer_open_child ( &tcp->xfer, &new_tcp->xfer );
+        
+        
+    } else {
+        /* Mark SYN as received and start sending ACKs with each packet */
+        tcp->tcp_state |= ( TCP_STATE_SENT ( TCP_ACK ) |
+                            TCP_STATE_RCVD ( TCP_SYN ) );
+    }
 
-	/* Mark SYN as received and start sending ACKs with each packet */
-	tcp->tcp_state |= ( TCP_STATE_SENT ( TCP_ACK ) |
-			    TCP_STATE_RCVD ( TCP_SYN ) );
-
-	return 0;
+    return 0;
 }
 
 /**
@@ -1194,7 +1304,7 @@ static int tcp_rx ( struct io_buffer *iobuf,
 	}
 	
 	/* Parse parameters from header and strip header */
-	tcp = tcp_demux ( ntohs ( tcphdr->dest ) );
+	tcp = tcp_demux ( ntohs ( tcphdr->dest ), ntohs ( tcphdr->src ) );
 	seq = ntohl ( tcphdr->seq );
 	ack = ntohl ( tcphdr->ack );
 	raw_win = ntohs ( tcphdr->win );
@@ -1216,12 +1326,96 @@ static int tcp_rx ( struct io_buffer *iobuf,
 	tcp_dump_flags ( tcp, tcphdr->flags );
 	DBGC2 ( tcp, "\n" );
 
-	/* If no connection was found, send RST */
-	if ( ! tcp ) {
-		tcp_xmit_reset ( tcp, st_src, tcphdr );
-		rc = -ENOTCONN;
-		goto discard;
-	}
+    /* If no connection was found, send RST */
+    if ( ! tcp ) {
+        tcp_xmit_reset ( tcp, st_src, tcphdr );
+        rc = -ENOTCONN;
+        goto discard;
+    }
+    
+    /** Support for multiple TCP connections here 
+    *	
+    *	If the connections is listening,
+    *	craete a new listening connection,
+    *	and add it to the list of tcp connections.
+    */
+    if ( tcp->tcp_state == TCP_LISTEN ) {		
+        
+        /** Copy peer details */
+        //memcpy ( &tcp->peer, st_src, sizeof ( tcp->peer ) );
+        //tcp->peer.st_port = tcphdr->src;
+        
+        /** Create new TCP connection */
+        struct tcp_connection *new_tcp;
+        // printf ( "TCP New connection created.\n" );
+        new_tcp = zalloc ( sizeof ( *new_tcp ) );
+        if ( ! new_tcp ) {
+            // printf ( "TCP Cannot create new connection!\n" ); 
+            return -ENOMEM;
+        }
+        ref_init ( &new_tcp->refcnt, NULL );
+        intf_init ( &new_tcp->xfer, &tcp_xfer_desc, &new_tcp->refcnt );
+        new_tcp->prev_tcp_state = tcp->prev_tcp_state;
+        new_tcp->tcp_state = tcp->tcp_state;
+        tcp_dump_state ( new_tcp );
+        new_tcp->snd_seq = tcp->snd_seq;
+        
+        /** Check contents of queues */
+        struct io_buffer *queued;
+        int count = 0;
+        list_for_each_entry ( queued, &tcp->rx_queue, list ) {
+        	count++;
+        }
+        // printf ( "TCP RX queue: %d\n", count );
+        count = 0;
+        list_for_each_entry ( queued, &tcp->tx_queue, list ) {
+        	count++;
+        }
+        // printf ( "TCP TX queue: %d\n", count );
+        
+        
+        /** Move queues */ 
+        INIT_LIST_HEAD ( &new_tcp->tx_queue );
+        INIT_LIST_HEAD ( &new_tcp->rx_queue );
+        new_tcp->local_port = LISTEN_PORT;
+        
+        /** Copy port details of peer */
+        memcpy ( &new_tcp->peer, st_src, sizeof ( struct sockaddr_tcpip ) );
+        //memset ( &new_tcp->peer, 0, sizeof ( new_tcp->peer ) );
+        //new_tcp->peer.st_family = st_src->st_family;
+        new_tcp->peer.st_port = tcphdr->src;
+        //new_tcp->peer.st_port = tcphdr->src;
+        
+        // printf ( "ST FAMILY %d\n", st_src->st_family );
+        // printf ( "ST PORT   %d\n", st_src->st_port );
+        
+        /** Copy other values from previous connection */
+        new_tcp->snd_sent = tcp->snd_sent;
+        new_tcp->snd_win = tcp->snd_win;
+        new_tcp->rcv_ack = tcp->rcv_ack;
+        new_tcp->rcv_win = tcp->rcv_win;
+        new_tcp->ts_val = tcp->ts_val;
+        new_tcp->ts_recent = tcp->ts_recent;
+        
+        timer_init ( &new_tcp->timer, tcp_expired, &new_tcp->refcnt );
+		timer_init ( &new_tcp->wait, tcp_wait_expired, &new_tcp->refcnt );
+        
+        
+        /* Add to list of TCP connections */
+        list_add_tail ( &new_tcp->list, &tcp_conns );
+        
+        /** Reset TCP LISTENING connection */
+        tcp->prev_tcp_state = TCP_CLOSED;
+        tcp->tcp_state = TCP_LISTEN;
+        tcp_dump_state ( tcp );
+        tcp->snd_seq = random();
+        //tcp->tx_queue = NULL;
+        //tcp->rx_queue = NULL;
+        INIT_LIST_HEAD ( &tcp->tx_queue );
+        INIT_LIST_HEAD ( &tcp->rx_queue );
+        
+        tcp = new_tcp;
+    }
 
 	/* Record old data-transfer window */
 	old_xfer_window = tcp_xfer_window ( tcp );
@@ -1233,6 +1427,20 @@ static int tcp_rx ( struct io_buffer *iobuf,
 			tcp_xmit_reset ( tcp, st_src, tcphdr );
 			goto discard;
 		}
+
+		/* Create fresh data transfer interface for new connection. */
+        if (  tcp->tcp_state == TCP_ESTABLISHED &&
+            tcp->prev_tcp_state == TCP_SYN_RCVD &&
+            tcp->new_tcp_created == 0 ) {
+            
+            if ( listener ) {
+                // printf ( "TCP Opening fresh interface for child connection.\n" );
+                xfer_open_child ( &listener->xfer, &tcp->xfer );
+                tcp->new_tcp_created++;
+            } else {
+                // printf ( "TCP NO reference to listener connection!\n" );
+            }
+        }
 	}
 
 	/* Force an ACK if this packet is out of order */

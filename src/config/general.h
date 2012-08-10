@@ -24,7 +24,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
  * "iPXE".
  *
  */
-#define PRODUCT_NAME ""
+#define PRODUCT_NAME "iPXE with BitTorrent protocol"
 #define PRODUCT_SHORT_NAME "iPXE"
 
 /*
@@ -59,6 +59,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #undef	DOWNLOAD_PROTO_HTTPS	/* Secure Hypertext Transfer Protocol */
 #undef	DOWNLOAD_PROTO_FTP	/* File Transfer Protocol */
 #undef	DOWNLOAD_PROTO_SLAM	/* Scalable Local Area Multicast */
+
+#define DOWNLOAD_PROTO_BITTORRENT /* BitTorrent Protocol*/
 
 /*
  * SAN boot protocols
@@ -117,8 +119,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define SANBOOT_CMD		/* SAN boot commands */
 #define MENU_CMD		/* Menu commands */
 #define LOGIN_CMD		/* Login command */
-#define SYNC_CMD		/* Sync command */
-//#define TIME_CMD		/* Time commands */
+#define TIME_CMD		/* Time commands */
 //#define DIGEST_CMD		/* Image crypto digest commands */
 //#define LOTEST_CMD		/* Loopback testing commands */
 //#define VLAN_CMD		/* VLAN commands */
@@ -154,7 +155,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 				 * e.g "test-foo" */
 #undef	NULL_TRAP		/* Attempt to catch NULL function calls */
 #undef	GDBSERIAL		/* Remote GDB debugging over serial */
-#undef	GDBUDP			/* Remote GDB debugging over UDP
+#define	GDBUDP			/* Remote GDB debugging over UDP
 				 * (both may be set) */
 
 #include <config/local/general.h>
