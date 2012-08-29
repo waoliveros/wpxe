@@ -312,7 +312,9 @@ static void bt_step ( struct bt_request *bt ) {
 	
 	/* Check total number of connections, and create new ones if needed */		
 	// If num of connections is lower than threshold, connect to more.
+	// Create new TCP connection to selected peer. bt_connect()
 	// Send handshake to selected peer.
+	// bt_peer_tx_handshake ()
 	// Wait for handshake to finish.
 	
 	/* Send a request */
@@ -336,8 +338,8 @@ static struct interface_descriptor bt_peer_desc =
 static struct process_descriptor bt_process_desc =
 	PROC_DESC_ONCE ( struct bt_request, process, bt_step );
 	
-/** Initiate a connection with a BitTorrent peer 
-*   and add to list of peers 
+/** Create a BitTorrent peer OBJECT ONLY
+*   and add to list of peers. No initiation of connection here. 
 */
 static struct bt_peer * bt_create_peer ( struct bt_request *bt ) {
 	
