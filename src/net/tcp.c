@@ -323,6 +323,7 @@ static int tcp_open ( struct interface *xfer, struct sockaddr *peer,
     
     tcp_dump_state ( tcp );
     tcp->snd_seq = random();
+	tcp->max_rcv_win = TCP_MAX_WINDOW_SIZE;
     INIT_LIST_HEAD ( &tcp->tx_queue );
     INIT_LIST_HEAD ( &tcp->rx_queue );
     
