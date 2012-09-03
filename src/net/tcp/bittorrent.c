@@ -154,7 +154,7 @@ struct bt_peer {
 	unsigned int port;
 	
 	/** State */
-	int bt_peer_state;
+	int state;
 	
 	/** Flags */
 	unsigned int flags;
@@ -310,13 +310,13 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	printf ( "Message length computed:\t %zd\n\n", data_len );							 
 	
 	/** Check in which state is the peer right now. */
-	switch ( peer->bt_peer_state ) {
+	switch ( peer->state ) {
 		/** Peer is waiting for handshake */
 		case BT_PEER_HANDSHAKE_SENT:
 			 // process received handshake then send own
 			 bt_peer_rx_handshake ( peer );
 			 bt_peer_tx_handshake ( peer );
-			 peer->bt_peer_state = BT_PEER_HANDSHAKE_RCVD;
+			 peer->state = BT_PEER_HANDSHAKE_RCVD;
 			 break;
 		case BT_PEER_HANDSHAKE_RCVD:
 			// handshake sent to peer, waiting for ack
@@ -338,7 +338,7 @@ static void bt_step ( struct bt_request *bt ) {
 	
 	
 	if ( bt )
-		printf(".");
+		printf("*");
 		
 	//if ( ! xfer_window ( &bt->listener ) )
 	//	return;	
@@ -351,12 +351,12 @@ static void bt_step ( struct bt_request *bt ) {
 		 Contact peers in list. Send handshake. */
 		struct bt_peer *peer;
 		peer = bt_create_peer ( bt );
-		peer->uri = parse_uri ( "tcp://192.168.4.1:80" );
+		peer->uri = parse_uri ( "tcp://192.168.1.3:80" );
 		ref_init ( &peer->uri->refcnt, NULL );
 		uri_get ( peer->uri );	
 		if ( ! bt_socket_open ( peer ) )
 			printf ( "Test socket opened!\n" );
-		return;
+		
 		
 		
 		/** Initialize peer URI */
@@ -373,15 +373,17 @@ static void bt_step ( struct bt_request *bt ) {
 		//printf ( "Handshake sent!\n" );
 		
 		/** Test scenario ends here */
-			
+		return;	
 	}
 	
-	printf ( "%d\n", bt_count_peers ( bt ) );
+	//printf ( "%d\n", bt_count_peers ( bt ) );
 	struct bt_peer *peer;
 	list_for_each_entry ( peer, &bt->peers, list ) {
-		printf ( "*" );
-	//	if ( ! xfer_window ( &peer->socket ) )
-	//		bt_peer_tx_handshake ( peer );
+		printf ( "+" );
+		if ( ! xfer_window ( &peer->socket ) && peer->state == BT_PEER_HANDSHAKE_SENT ) {
+			bt_peer_tx_handshake ( peer );
+			peer->state = BT_PEER_HANDSHAKE_SENT;
+		}
 	}
 		
 	/* Check if download is finished */
@@ -414,7 +416,7 @@ static struct interface_descriptor bt_peer_desc =
 	
 /** BitTorrent process descriptor */	
 static struct process_descriptor bt_process_desc =
-	PROC_DESC_ONCE ( struct bt_request, process, bt_step );
+	PROC_DESC ( struct bt_request, process, bt_step );
 
 /** Create a BitTorrent peer OBJECT ONLY
 *   and add to list of peers. No initiation of connection here. 
