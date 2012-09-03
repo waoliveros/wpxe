@@ -58,10 +58,11 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/image.h>
 #include <ipxe/downloader.h>
 
+#include <ipxe/bittorrent.h>
+
 #define BITTORRENT_PORT 49155
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
-//#define BT_DEF_INFO_HASH { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf1, 0x23, 0x45, 
-//							0x67, 0x89, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a }
+#define BT_TEST_HASH "f06f95fa2f7eb05455cb4538880634534384163d"
 
 FEATURE ( FEATURE_PROTOCOL, "BitTorrent", DHCP_EB_FEATURE_BITTORRENT, 1 );
 
@@ -105,10 +106,10 @@ struct bt_request {
 	struct process process;
 	
 	/** The current torrent info hash */
-	uint8_t info_hash[20]; 
+	uint8_t * info_hash; 
 	
 	/** This client's peer id */
-	uint8_t peerid[20];
+	uint8_t * peerid;
 	
 	/** The pointer to the downloader image.
 	*	This pointer is useful for reading partially downloaded pieces
@@ -338,7 +339,7 @@ static void bt_step ( struct bt_request *bt ) {
 	
 	
 	if ( bt )
-		printf("*");
+	//	printf("*");
 		
 	//if ( ! xfer_window ( &bt->listener ) )
 	//	return;	
@@ -379,7 +380,7 @@ static void bt_step ( struct bt_request *bt ) {
 	//printf ( "%d\n", bt_count_peers ( bt ) );
 	struct bt_peer *peer;
 	list_for_each_entry ( peer, &bt->peers, list ) {
-		printf ( "+" );
+	//	printf ( "+" );
 		if ( ! xfer_window ( &peer->socket ) && peer->state == BT_PEER_HANDSHAKE_SENT ) {
 			bt_peer_tx_handshake ( peer );
 			peer->state = BT_PEER_HANDSHAKE_SENT;
@@ -569,9 +570,6 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	struct downloader *downloader;
 	int rc;
 	
-	// Debug: for hardcoded hash_info generation
-	unsigned int i;
-	
 	/* We can use the uri provided by the function for the tracker address. */ 
 	//struct sockaddr_tcpip tracker;
 	
@@ -597,14 +595,8 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	/* Initialize list of peers */
 	INIT_LIST_HEAD ( &bt->peers );
 	
-	// Debug: hardcoded info_hash
-	for ( i = 0; i < 20; i++ ) {
-		bt->info_hash[i] = 0xaa;
-	}
-	// debug: hardcoded peerid
-	for ( i = 0; i < 20; i++ ) {
-		bt->peerid[i] = 0x11;
-	}
+	bt->info_hash = bt_str_info_hash ( BT_TEST_HASH );
+	bt->peerid = bt_generate_peerid ( );
 	
 	/* Open tracker socket */
 	// Insert tracker communications here.
