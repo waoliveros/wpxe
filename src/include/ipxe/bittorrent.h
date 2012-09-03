@@ -54,24 +54,27 @@ static uint8_t * bt_str_info_hash ( char * str ) {
 	int i = 0;
 	
 	info_hash = zalloc ( sizeof ( uint8_t ) * 20 );
-	for ( i = 0; i < 20; i += 2 ) {
+	for ( i = 0; i < 20; i++ ) {
 		
 		// Higher value
 		/** If char is numeric */
-		if ( 48 <= str[i] && str[i] >= 57 )
-			info_hash[i] = ( str[i] - 48 ) * 16;
-		/** If char is alpha */	
-		else 
-			info_hash[i] = ( str[i] - 87 ) * 16;
+		if ( 48 <= str[i*2] && str[i*2] <= 57 ) {
+			info_hash[i] = ( str[i*2] - 48 ) * 16;
+		} else { 
+			info_hash[i] = ( str[i*2] - 87 ) * 16;
+		}
+			
 		// Lower value	
 		/** If char is numeric */
-		if ( 48 <= str[i+1] && str[i+1] >= 57 )
-			info_hash[i+1] = ( str[i+1] - 48 );
-		/** If char is alpha */	
-		else 
-			info_hash[i+1] = ( str[i+1] - 87 );	
-			
-			
+		if ( 48 <= str[i*2+1] && str[i*2+1] <= 57 ) {
+			info_hash[i] += ( str[i*2+1] - 48 );
+		} else { 
+			info_hash[i] += ( str[i*2+1] - 87 );
+		}			
+	}
+	
+	for ( i = 0; i < 20; i++ ) {
+		printf ("%x", info_hash[i]);
 	}
 	
 	return info_hash;

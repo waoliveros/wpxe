@@ -266,9 +266,9 @@ static void bt_peer_close ( struct bt_peer *peer, int rc ) {
 }
 
 /** BitTorrent peer message transmit */
-static int bt_peer_xmit ( struct bt_peer *peer, uint8_t *message ) {
+static int bt_peer_xmit ( struct bt_peer *peer, uint8_t *message, size_t len ) {
 	int rc;
-	rc = xfer_printf ( &peer->socket, "%s", message );
+	rc = xfer_deliver_raw ( &peer->socket, message, len );
 	printf ( "Peer message transmitted.\n" );
 	return rc;
 }
@@ -305,7 +305,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	struct bt_message *message = iobuf->data;
 	
 	/** Sanity check of the message */
-	data_len = sizeof ( message->id )+ sizeof ( message->payload );
+	data_len = sizeof ( message->id ) + sizeof ( message->payload );
 	assert ( message->len == data_len );
 	printf ( "Message length:\t\t %d\n", message->len );
 	printf ( "Message length computed:\t %zd\n\n", data_len );							 
@@ -316,13 +316,13 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 		case BT_PEER_HANDSHAKE_SENT:
 			 // process received handshake then send own
 			 bt_peer_rx_handshake ( peer );
-			 bt_peer_tx_handshake ( peer );
 			 peer->state = BT_PEER_HANDSHAKE_RCVD;
 			 break;
 		case BT_PEER_HANDSHAKE_RCVD:
 			// handshake sent to peer, waiting for ack
 			// send peer handshake	 
 		default:
+			printf ( "Some data received from TCP.\n" );
 			break;			
 	}
 	
@@ -352,7 +352,7 @@ static void bt_step ( struct bt_request *bt ) {
 		 Contact peers in list. Send handshake. */
 		struct bt_peer *peer;
 		peer = bt_create_peer ( bt );
-		peer->uri = parse_uri ( "tcp://192.168.1.3:80" );
+		peer->uri = parse_uri ( "tcp://192.168.4.1:50986" );
 		ref_init ( &peer->uri->refcnt, NULL );
 		uri_get ( peer->uri );	
 		if ( ! bt_socket_open ( peer ) )
@@ -380,10 +380,11 @@ static void bt_step ( struct bt_request *bt ) {
 	//printf ( "%d\n", bt_count_peers ( bt ) );
 	struct bt_peer *peer;
 	list_for_each_entry ( peer, &bt->peers, list ) {
-	//	printf ( "+" );
-		if ( ! xfer_window ( &peer->socket ) && peer->state == BT_PEER_HANDSHAKE_SENT ) {
+		//printf ( "+" );
+		if ( xfer_window ( &peer->socket ) && peer->state == BT_PEER_CREATED ) {
 			bt_peer_tx_handshake ( peer );
 			peer->state = BT_PEER_HANDSHAKE_SENT;
+			printf ( "BT Handshake sent!\n" );
 		}
 	}
 		
@@ -434,6 +435,8 @@ static struct bt_peer * bt_create_peer ( struct bt_request *bt ) {
 	/** Add reference to parent request */ 	
 	peer->bt = bt;
 	ref_get ( &bt->refcnt );
+	
+	peer->state = BT_PEER_CREATED;
 		
 	/** Initialize peer refcnt. Function bt_peer_free is called when counter
 		drops to zero. Initialize socket with descriptor. Increment peer
@@ -492,7 +495,16 @@ static int bt_peer_tx_handshake ( struct bt_peer *peer ) {
 	memcpy(message + 28, peer->bt->info_hash, 20);
 	memcpy(message + 48, peer->bt->peerid, 20); 
 	
-	bt_peer_xmit ( peer, message );
+	bt_peer_xmit ( peer, message, BT_HANDSHAKELEN );
+	
+	int i = 1;
+	
+	printf ( "BT Message: " );
+	while ( i < BT_HANDSHAKELEN ) {
+		printf (  "%c", message[i] );
+		i++; 
+	}
+	printf ( "\n" );
 	
 	return rc;
 }
@@ -615,7 +627,7 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	/* Attach to parent interface, mortalise self, and return */
 	intf_plug_plug ( &bt->xfer, xfer );
 	ref_put ( &bt->refcnt );
-			
+	
 	return 0;
 	
  err:
