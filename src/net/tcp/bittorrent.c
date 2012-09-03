@@ -60,12 +60,19 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 #define BITTORRENT_PORT 49155
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
+//#define BT_DEF_INFO_HASH { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf1, 0x23, 0x45, 
+//							0x67, 0x89, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a }
 
 FEATURE ( FEATURE_PROTOCOL, "BitTorrent", DHCP_EB_FEATURE_BITTORRENT, 1 );
 
 /** Function prototypes */
 static int bt_peer_tx_handshake ();
 static int bt_peer_rx_handshake ();
+static struct bt_peer * bt_create_peer ();
+static int bt_socket_open ();
+
+/** Hack variables */
+//static int has_peers = 0;
 
 /**
  * A BitTorrent client
@@ -127,7 +134,11 @@ struct bt_request {
  */
 
 struct bt_peer {
+	
+	/** Reference count */
+	struct refcnt refcnt;
 
+	/** Parent request */
 	struct bt_request *bt;
 
 	/** List of BitTorrent peers */
@@ -136,11 +147,17 @@ struct bt_peer {
 	/** Socket interface */
 	struct interface socket;
 	
+	/** Address of the peer */
+	struct uri *uri;
+	
+	/** Port to be used in BitTorrent operations */
+	unsigned int port;
+	
 	/** State */
 	int bt_peer_state;
 	
-	/** Reference count */
-	struct refcnt refcnt;
+	/** Flags */
+	unsigned int flags;
 
 };
 
@@ -163,8 +180,9 @@ struct bt_block_request {
 };
 
 enum bt_peer_state {
-	BT_PEER_HANDSHAKE1 = 0,
-	BT_PEER_HANDSHAKE2,
+	BT_PEER_CREATED = 0,
+	BT_PEER_HANDSHAKE_SENT,
+	BT_PEER_HANDSHAKE_RCVD,
 	BT_PEER_LEECHING,
 	BT_PEER_SEEDING
 };
@@ -184,13 +202,17 @@ enum bt_message_id {
 
 enum bt_peer_flags {
 	/** This client is choking the peer */
-	BT_PEER_AM_CHOKING =	0x0001,
+	BT_PEER_AM_CHOKING =	0x01,
 	/** This client is interested in the peer */
-	BT_PEER_AM_INTERESTED =	0x0002,
+	BT_PEER_AM_INTERESTED =	0x02,
 	/** The peer is choking this client */
-	BT_PEER_CHOKING = 		0x0003,
+	BT_PEER_CHOKING = 		0x04,
 	/** The peer is interested in this client */
-	BT_PEER_INTERESTED =	0x0004
+	BT_PEER_INTERESTED =	0x08,
+	
+//	BT_PEER_HANDSHAKE_SENT = 0x10,
+//	BT_PEER_HANDSHAKE_RECEIVED = 0x20
+	
 };
 
 /**
@@ -237,7 +259,7 @@ static void bt_peer_close ( struct bt_peer *peer, int rc ) {
 	intf_shutdown ( &peer->socket, rc);
 	
 	/** Reference to bt->peer_info and bt->peerid is no longer needed */
-	ref_get ( &peer->bt->refcnt );
+	ref_put ( &peer->bt->refcnt );
 	
 	bt_peer_free ( &peer->refcnt );
 }
@@ -246,7 +268,18 @@ static void bt_peer_close ( struct bt_peer *peer, int rc ) {
 static int bt_peer_xmit ( struct bt_peer *peer, uint8_t *message ) {
 	int rc;
 	rc = xfer_printf ( &peer->socket, "%s", message );
+	printf ( "Peer message transmitted.\n" );
 	return rc;
+}
+
+/** Count BT peers */
+static int bt_count_peers ( struct bt_request *bt ) {
+	struct bt_peer *peer;
+	int i = 0;
+	list_for_each_entry ( peer, &bt->peers, list ) {
+		i++;
+	}
+	return i;
 }
 
 /** BitTorrent read block from memory 
@@ -274,18 +307,18 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	data_len = sizeof ( message->id )+ sizeof ( message->payload );
 	assert ( message->len == data_len );
 	printf ( "Message length:\t\t %d\n", message->len );
-	printf ( "Message length computed:\t %d\n\n", data_len );							 
+	printf ( "Message length computed:\t %zd\n\n", data_len );							 
 	
 	/** Check in which state is the peer right now. */
 	switch ( peer->bt_peer_state ) {
 		/** Peer is waiting for handshake */
-		case BT_PEER_HANDSHAKE1:
+		case BT_PEER_HANDSHAKE_SENT:
 			 // process received handshake then send own
 			 bt_peer_rx_handshake ( peer );
 			 bt_peer_tx_handshake ( peer );
-			 peer->bt_peer_state = BT_PEER_HANDSHAKE2;
+			 peer->bt_peer_state = BT_PEER_HANDSHAKE_RCVD;
 			 break;
-		case BT_PEER_HANDSHAKE2:
+		case BT_PEER_HANDSHAKE_RCVD:
 			// handshake sent to peer, waiting for ack
 			// send peer handshake	 
 		default:
@@ -301,8 +334,55 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 
 /** BitTorrent process */
 static void bt_step ( struct bt_request *bt ) {
+	
+	
+	
 	if ( bt )
 		printf(".");
+		
+	//if ( ! xfer_window ( &bt->listener ) )
+	//	return;	
+	
+	/** If there are no peers get list from tracker */
+	if ( ! bt_count_peers ( bt ) ) {
+		
+		/** The following is just a test scenario
+		 Simulated tracker comm. Populate list 
+		 Contact peers in list. Send handshake. */
+		struct bt_peer *peer;
+		peer = bt_create_peer ( bt );
+		peer->uri = parse_uri ( "tcp://192.168.4.1:80" );
+		ref_init ( &peer->uri->refcnt, NULL );
+		uri_get ( peer->uri );	
+		if ( ! bt_socket_open ( peer ) )
+			printf ( "Test socket opened!\n" );
+		return;
+		
+		
+		/** Initialize peer URI */
+		//peer->uri = 
+		
+		/** For now, let's manually set the info hash */
+		//bt->info_hash = BT_DEF_INFO_HASH;
+		
+		//while ( ! xfer_window ( &peer->socket ) )
+		//	sleep ( 1 );
+		
+		//bt_peer_tx_handshake ( peer );
+		
+		//printf ( "Handshake sent!\n" );
+		
+		/** Test scenario ends here */
+			
+	}
+	
+	printf ( "%d\n", bt_count_peers ( bt ) );
+	struct bt_peer *peer;
+	list_for_each_entry ( peer, &bt->peers, list ) {
+		printf ( "*" );
+	//	if ( ! xfer_window ( &peer->socket ) )
+	//		bt_peer_tx_handshake ( peer );
+	}
 		
 	/* Check if download is finished */
 	// If finished, we return to upper layer.
@@ -310,7 +390,7 @@ static void bt_step ( struct bt_request *bt ) {
 	/* Check if tracker communication must be made */
 	// If no connections, contact tracker and update list.
 	
-	/* Check total number of connections, and create new ones if needed */		
+	/* Check total number of connections, and create new ones if needed */
 	// If num of connections is lower than threshold, connect to more.
 	// Create new TCP connection to selected peer. bt_connect()
 	// Send handshake to selected peer.
@@ -319,8 +399,6 @@ static void bt_step ( struct bt_request *bt ) {
 	
 	/* Send a request */
 	
-	
-		
 	return;
 }
 
@@ -337,7 +415,7 @@ static struct interface_descriptor bt_peer_desc =
 /** BitTorrent process descriptor */	
 static struct process_descriptor bt_process_desc =
 	PROC_DESC_ONCE ( struct bt_request, process, bt_step );
-	
+
 /** Create a BitTorrent peer OBJECT ONLY
 *   and add to list of peers. No initiation of connection here. 
 */
@@ -352,15 +430,47 @@ static struct bt_peer * bt_create_peer ( struct bt_request *bt ) {
 	
 	/** Add reference to parent request */ 	
 	peer->bt = bt;
-	ref_put ( &bt->refcnt );
+	ref_get ( &bt->refcnt );
 		
 	/** Initialize peer refcnt. Function bt_peer_free is called when counter
 		drops to zero. Initialize socket with descriptor. Increment peer
 		reference counter. */	
 	ref_init ( &peer->refcnt, bt_peer_free );
 	intf_init ( &peer->socket, &bt_peer_desc, &peer->refcnt );	
-	list_add ( &peer->list, &bt->peers );
 	return peer;
+}
+
+/** Establish a connection with another peer */
+static int bt_socket_open (struct bt_peer *peer) {
+	struct uri *uri = peer->uri;
+	struct sockaddr_tcpip server;
+	struct interface *socket;
+	int rc;
+
+	peer = bt_create_peer ( peer->bt );
+	if ( !peer )
+		return -ENOMEM;
+	
+
+	/* Open socket */
+	memset ( &server, 0, sizeof ( server ) );
+	server.st_port = htons ( uri_port ( uri, 80 ) );
+	socket = &peer->socket;
+	
+	printf ( "Opening socket!\n" );
+	printf ( "URI Scheme: %s\n", uri->scheme );
+	printf ( "URI Host: %s\n", uri->host );
+	printf ( "URI Port: %s\n", uri->port );
+	
+	if ( ( rc = xfer_open_named_socket ( socket, SOCK_STREAM,
+					     ( struct sockaddr * ) &server,
+					     uri->host, NULL ) ) != 0 )
+		return rc; 
+	
+	/** If there are no errors, add peer to list */
+	list_add ( &peer->list, &peer->bt->peers );
+	
+	return 0;
 }
 
 /** Do handshake with a peer */ 
@@ -405,6 +515,9 @@ static int bt_xfer_open_child ( struct bt_request *bt,
 
 	/** Plug peer socket and child interface from listening TCP connection. */
 	intf_plug_plug ( &peer->socket, child ); 	
+	
+	/** Add new peer to list of BTpeers */
+	list_add ( &peer->list, &bt->peers );
 	
 	/** Sending message to client. */
 	while ( ! xfer_window ( &peer->socket ) ) {
@@ -454,6 +567,9 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	struct downloader *downloader;
 	int rc;
 	
+	// Debug: for hardcoded hash_info generation
+	unsigned int i;
+	
 	/* We can use the uri provided by the function for the tracker address. */ 
 	//struct sockaddr_tcpip tracker;
 	
@@ -479,11 +595,21 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	/* Initialize list of peers */
 	INIT_LIST_HEAD ( &bt->peers );
 	
+	// Debug: hardcoded info_hash
+	for ( i = 0; i < 20; i++ ) {
+		bt->info_hash[i] = 0xaa;
+	}
+	// debug: hardcoded peerid
+	for ( i = 0; i < 20; i++ ) {
+		bt->peerid[i] = 0x11;
+	}
+	
 	/* Open tracker socket */
 	// Insert tracker communications here.
 	// Try contacting the tracker.
 	// If tracker is not present, abort.
 	// If tracer is present, get list of peers.
+	
 
 	/* Open listening connection */
 	listener = &bt->listener;

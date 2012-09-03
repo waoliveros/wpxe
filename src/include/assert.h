@@ -13,7 +13,7 @@
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #ifdef NDEBUG
-#define ASSERTING 0
+#define ASSERTING 1
 #else
 #define ASSERTING 1
 #endif
