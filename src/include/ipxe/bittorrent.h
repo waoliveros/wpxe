@@ -79,6 +79,6 @@ static uint8_t * bt_str_info_hash ( char * str ) {
 	
 	return info_hash;
 	
-}						
+}					
 
 #endif /* _IPXE_BITTORRENT_H */

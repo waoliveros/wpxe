@@ -151,6 +151,9 @@ struct bt_peer {
 	/** Address of the peer */
 	struct uri *uri;
 	
+	/** Peer id */
+	uint8_t peerid[20];
+	
 	/** Port to be used in BitTorrent operations */
 	unsigned int port;
 	
@@ -166,6 +169,14 @@ struct bt_message {
 	uint32_t len;
 	uint8_t  id;
 	uint8_t *payload;
+};
+
+struct bt_handshake {
+	uint8_t pstrlen;
+	uint8_t pstr[19];
+	uint8_t reserved[8];
+	uint8_t info_hash[20];
+	uint8_t peer_id[20];
 };
 
 struct bt_block_request {
@@ -303,31 +314,43 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	int rc = 0;
 	size_t data_len;
 	struct bt_message *message = iobuf->data;
+	struct bt_handshake *handshake = iobuf->data;
 	
-	/** Sanity check of the message */
-	data_len = sizeof ( message->id ) + sizeof ( message->payload );
-	assert ( message->len == data_len );
-	printf ( "Message length:\t\t %d\n", message->len );
-	printf ( "Message length computed:\t %zd\n\n", data_len );							 
+	/** Check if message is a handshake **/
+	if ( handshake->pstrlen == 19 ) {
+		data_len = sizeof ( message );
+		handshake = iobuf->data;
+		printf ( "Received handshake length:\t %zd\n\n", data_len );
+	} else { 
+		/** Sanity check of the message */
+		data_len = sizeof ( message->id ) + sizeof ( message->payload );
+		assert ( message->len == data_len );
+		printf ( "Original message length:\t %d\n", message->len );
+		printf ( "Received message length:\t %zd\n\n", data_len );							 
+	}
 	
 	/** Check in which state is the peer right now. */
 	switch ( peer->state ) {
 		/** Peer is waiting for handshake */
 		case BT_PEER_HANDSHAKE_SENT:
-			 // process received handshake then send own
-			 bt_peer_rx_handshake ( peer );
-			 peer->state = BT_PEER_HANDSHAKE_RCVD;
-			 break;
+		
+			// Check if message received is a handshake
+			if ( handshake->pstrlen == 19 ) {
+				// process received handshake then send own
+				if ( bt_peer_rx_handshake ( peer, handshake ) == 0 ) {
+					peer->state = BT_PEER_HANDSHAKE_RCVD;
+					printf ( "Peer's info_hash is the same.\n" );
+				}
+				
+			}
+			
+			break;
 		case BT_PEER_HANDSHAKE_RCVD:
 			// handshake sent to peer, waiting for ack
 			// send peer handshake	 
 		default:
 			printf ( "Some data received from TCP.\n" );
 			break;			
-	}
-	
-	while ( iobuf && iob_len ( iobuf ) ) {
-		
 	}
 	
 	return rc;
@@ -510,8 +533,18 @@ static int bt_peer_tx_handshake ( struct bt_peer *peer ) {
 }
 
 /** Process handshake from peer */
-static int bt_peer_rx_handshake ( uint8_t *message ) {
-	return message[0];
+static int bt_peer_rx_handshake ( struct bt_peer *peer, struct bt_handshake *handshake ) {
+	
+	int i;
+	int rc = 0;
+	
+	/** Check if info_hash match */
+	for ( i = 0; i < 20; i++ ) {
+		if ( peer->bt->info_hash[i] != handshake->info_hash[i] )
+			rc = -1;
+	}
+		
+	return rc;
 }		
 
 /** Open child socket */
