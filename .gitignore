@@ -2,3 +2,5 @@
 .DS_Store
 
 *.plist
+
+src/compile.sh
