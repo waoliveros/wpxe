@@ -24,7 +24,6 @@ FILE_LICENCE ( GPL2_OR_LATER );
  * BitTorrent Protocol
  *
  */
-
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -62,15 +61,17 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 #define BITTORRENT_PORT 49155
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
-#define BT_TEST_HASH "f06f95fa2f7eb05455cb4538880634534384163d"
+// #define BT_TEST_HASH "f06f95fa2f7eb05455cb4538880634534384163d"
+#define BT_TEST_HASH "4c0e766e8bbe53baa0410a5a698c4b3916224c0f"
 
 FEATURE ( FEATURE_PROTOCOL, "BitTorrent", DHCP_EB_FEATURE_BITTORRENT, 1 );
 
 /** Function prototypes */
-static int bt_peer_tx_handshake ();
-static int bt_peer_rx_handshake ();
+static int bt_tx_handshake ();
+static int bt_rx_handshake ();
 static struct bt_peer * bt_create_peer ();
 static int bt_socket_open ();
+static int bt_tx_keep_alive ();
 
 /** Hack variables */
 //static int has_peers = 0;
@@ -168,7 +169,7 @@ struct bt_peer {
 struct bt_message {
 	uint32_t len;
 	uint8_t  id;
-	uint8_t *payload;
+	void *payload;
 };
 
 struct bt_handshake {
@@ -265,8 +266,13 @@ static void bt_peer_free ( struct refcnt *refcnt ) {
 	free ( peer );
 };
 
-/** Close the peer connection */
+/**  
+* Close the peer connection
+* When a peer gets disconnected, this is also called.
+*/
 static void bt_peer_close ( struct bt_peer *peer, int rc ) {
+	
+	/** Remove peer from peer list */
 	list_del( &peer->list );
 	intf_shutdown ( &peer->socket, rc);
 	
@@ -337,7 +343,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 			// Check if message received is a handshake
 			if ( handshake->pstrlen == 19 ) {
 				// process received handshake then send own
-				if ( bt_peer_rx_handshake ( peer, handshake ) == 0 ) {
+				if ( bt_rx_handshake ( peer, handshake ) == 0 ) {
 					peer->state = BT_PEER_HANDSHAKE_RCVD;
 					printf ( "Peer's info_hash is the same.\n" );
 				}
@@ -356,7 +362,11 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	return rc;
 }
 
-/** BitTorrent process */
+/** BitTorrent process 
+	This function is always executed in the background. 
+	Chain of events should be kept to a minimum
+	to avoid blocking other functions.
+*/
 static void bt_step ( struct bt_request *bt ) {
 	
 	
@@ -392,7 +402,7 @@ static void bt_step ( struct bt_request *bt ) {
 		//while ( ! xfer_window ( &peer->socket ) )
 		//	sleep ( 1 );
 		
-		//bt_peer_tx_handshake ( peer );
+		//bt_tx_handshake ( peer );
 		
 		//printf ( "Handshake sent!\n" );
 		
@@ -405,8 +415,9 @@ static void bt_step ( struct bt_request *bt ) {
 	list_for_each_entry ( peer, &bt->peers, list ) {
 		//printf ( "+" );
 		if ( xfer_window ( &peer->socket ) && peer->state == BT_PEER_CREATED ) {
-			bt_peer_tx_handshake ( peer );
+			bt_tx_handshake ( peer );
 			peer->state = BT_PEER_HANDSHAKE_SENT;
+			bt_tx_keep_alive ( peer );
 			printf ( "BT Handshake sent!\n" );
 		}
 	}
@@ -421,7 +432,7 @@ static void bt_step ( struct bt_request *bt ) {
 	// If num of connections is lower than threshold, connect to more.
 	// Create new TCP connection to selected peer. bt_connect()
 	// Send handshake to selected peer.
-	// bt_peer_tx_handshake ()
+	// bt_tx_handshake ()
 	// Wait for handshake to finish.
 	
 	/* Send a request */
@@ -503,12 +514,11 @@ static int bt_socket_open (struct bt_peer *peer) {
 }
 
 /** Do handshake with a peer */ 
-static int bt_peer_tx_handshake ( struct bt_peer *peer ) {
+static int bt_tx_handshake ( struct bt_peer *peer ) {
 	int rc = 0;
 	uint8_t *message;
 	
 	assert ( peer != NULL );
-	//assert ( bt != NULL );
 	
 	message = zalloc ( BT_HANDSHAKELEN );
 	message[0] = 19;
@@ -533,7 +543,8 @@ static int bt_peer_tx_handshake ( struct bt_peer *peer ) {
 }
 
 /** Process handshake from peer */
-static int bt_peer_rx_handshake ( struct bt_peer *peer, struct bt_handshake *handshake ) {
+static int bt_rx_handshake ( struct bt_peer *peer, 
+									struct bt_handshake *handshake ) {
 	
 	int i;
 	int rc = 0;
@@ -545,11 +556,40 @@ static int bt_peer_rx_handshake ( struct bt_peer *peer, struct bt_handshake *han
 	}
 		
 	return rc;
-}		
+}
+
+/** Process KEEP-ALIVE message */
+/** Process CHOKE message */
+/** Process UNCHOKE message */
+/** Process INTERESTED message */
+/** Process NOTINTERESTED message */
+/** Process HAVE message */
+/** Process BITFIELD message */
+/** Process REQUEST message */
+/** Process PIECE message */
+/** Process CANCEL message  */
+/** Process PORT message */
+
+/** Create KEEP-ALIVE message */
+static int bt_tx_keep_alive ( struct bt_peer *peer ) {
+	return  xfer_printf ( &peer->socket, "%c%c%c%c", 0,0,0,0 );
+}
+
+/** Create HAVE message 
+static struct bt_message * bt_have ( struct bt_peer *peer, uint32_t index ) {
+	struct bt_message *message;
+	message = zalloc ( sizeof ( struct bt_message ) );
+	message->len = 5;
+	message->id = 4;
+	message->payload = zalloc ( sizeof ( uint32_t ) );
+	*message->payload = index;
+	return message; 
+} 
+*/
 
 /** Open child socket */
 static int bt_xfer_open_child ( struct bt_request *bt,
-						 struct interface *child  ) {				 
+						 		struct interface *child  ) {				 
 	
 	/** Create new peer */
 	struct bt_peer *peer;
