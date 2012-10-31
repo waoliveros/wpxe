@@ -14,6 +14,25 @@ FILE_LICENCE ( GPL2_OR_LATER );
 /** BitTorrent default port */
 #define BITTORRENT_PORT 49155
 
+#define BT_CHOKE 0
+#define BT_UNCHOKE 1
+#define BT_INTERESTED 2
+#define BT_NOTINTERESTD 3
+#define BT_HAVE 4
+#define BT_BITFIELD 5
+#define BT_REQUEST 6
+#define BT_PIECE 7
+#define BT_CANCEL 8
+#define BT_PORT 9
+
+struct bt_piece {
+	uint32_t length;
+	uint8_t id;
+	uint32_t index;
+	uint32_t begin;
+	void *block;
+};
+
 extern int bt_open_filter ( struct interface *xfer, struct uri *uri,
 			      unsigned int default_port,
 			      int ( * filter ) ( struct interface *,

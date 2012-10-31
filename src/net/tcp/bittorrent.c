@@ -200,19 +200,6 @@ enum bt_peer_state {
 	BT_PEER_SEEDING
 };
 
-enum bt_message_id {
-	BT_CHOKE = 0,
-	BT_UNCHOKE,
-	BT_INTERESTED,
-	BT_NOT_INTERESTED,
-	BT_HAVE,
-	BT_BITFIELD,
-	BT_REQUEST,
-	BT_PIECE,
-	BT_CANCEL,
-	BT_PORT
-};
-
 enum bt_peer_flags {
 	/** This client is choking the peer */
 	BT_PEER_AM_CHOKING =	0x01,
@@ -529,7 +516,7 @@ static int bt_tx_handshake ( struct bt_peer *peer ) {
 	memcpy(message + 48, peer->bt->peerid, 20); 
 	
 	bt_peer_xmit ( peer, message, BT_HANDSHAKELEN );
-	
+
 	int i = 1;
 	
 	printf ( "BT Message: " );
@@ -575,17 +562,51 @@ static int bt_tx_keep_alive ( struct bt_peer *peer ) {
 	return  xfer_printf ( &peer->socket, "%c%c%c%c", 0,0,0,0 );
 }
 
-/** Create HAVE message 
-static struct bt_message * bt_have ( struct bt_peer *peer, uint32_t index ) {
-	struct bt_message *message;
-	message = zalloc ( sizeof ( struct bt_message ) );
-	message->len = 5;
-	message->id = 4;
-	message->payload = zalloc ( sizeof ( uint32_t ) );
-	*message->payload = index;
-	return message; 
+/** Create HAVE message */
+static int bt_tx_have ( struct bt_peer *peer, uint32_t index ) {
+	uint8_t message[9];
+	message[3] = 5; // length = 5
+	message[4] = 4; // id = 4
+	memcpy ( message + 5, &index, sizeof ( index ) ); 
+	return xfer_printf ( &peer->socket, "%s", message );
 } 
-*/
+
+/** Send REQUEST message */
+static int bt_tx_request ( struct bt_peer *peer, uint32_t index, uint32_t begin, uint32_t length ) {
+	uint8_t message[17];
+	message[3] = 13;
+	message[4] = 6;
+	memcpy ( message + 5, &index, sizeof ( index ) );
+	memcpy ( message + 9, &begin, sizeof ( begin ) );
+	memcpy ( message + 13, &length, sizeof ( length ) );
+	return xfer_printf ( &peer->socket, "%s", message );
+}
+
+/** Send CANCEL message */
+static int bt_tx_cancel ( struct bt_peer *peer, uint32_t index, uint32_t begin, uint32_t length ) {
+	uint8_t message[17];
+	message[3] = 13;
+	message[4] = 8;
+	memcpy ( message + 5, &index, sizeof ( index ) );
+	memcpy ( message + 9, &begin, sizeof ( begin ) );
+	memcpy ( message + 13, &length, sizeof ( length ) );
+	return xfer_printf ( &peer->socket, "%s", message );
+}
+
+/** Send PIECE message */
+static int bt_tx_piece ( struct bt_peer *peer, uint32_t index, uint32_t begin, struct io_buffer *iobuf ) {
+	struct bt_piece *piece;
+	// Create space for message header, iobuf->data is reused
+	piece = iob_push ( iobuf, sizeof ( uint8_t ) * 9 );
+	piece->length = 9 + iob_len ( iobuf );
+	piece->id = 7;
+	piece->index = index;
+	piece->begin = begin;
+	xfer_deliver_iob ( &peer->socket, iobuf );
+	return 0;
+
+}
+
 
 /** Open child socket */
 static int bt_xfer_open_child ( struct bt_request *bt,
