@@ -73,6 +73,12 @@ static struct bt_peer * bt_create_peer ();
 static int bt_socket_open ();
 static int bt_tx_keep_alive ();
 
+static int bt_tx_keep_alive ();
+static int bt_tx_have ();
+static int bt_tx_request ();
+static int bt_tx_piece ();
+static int bt_tx_cancel ();
+
 /** Hack variables */
 //static int has_peers = 0;
 
@@ -269,14 +275,6 @@ static void bt_peer_close ( struct bt_peer *peer, int rc ) {
 	bt_peer_free ( &peer->refcnt );
 }
 
-/** BitTorrent peer message transmit */
-static int bt_peer_xmit ( struct bt_peer *peer, uint8_t *message, size_t len ) {
-	int rc;
-	rc = xfer_deliver_raw ( &peer->socket, message, len );
-	printf ( "Peer message transmitted.\n" );
-	return rc;
-}
-
 /** Count BT peers */
 static int bt_count_peers ( struct bt_request *bt ) {
 	struct bt_peer *peer;
@@ -309,40 +307,34 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	struct bt_message *message = iobuf->data;
 	struct bt_handshake *handshake = iobuf->data;
 	
-	/** Check if message is a handshake **/
-	if ( handshake->pstrlen == 19 ) {
-		data_len = sizeof ( message );
-		handshake = iobuf->data;
-		printf ( "Received handshake length:\t %zd\n\n", data_len );
-	} else { 
-		/** Sanity check of the message */
-		data_len = sizeof ( message->id ) + sizeof ( message->payload );
-		assert ( message->len == data_len );
-		printf ( "Original message length:\t %d\n", message->len );
-		printf ( "Received message length:\t %zd\n\n", data_len );							 
-	}
-	
 	/** Check in which state is the peer right now. */
 	switch ( peer->state ) {
 		/** Peer is waiting for handshake */
 		case BT_PEER_HANDSHAKE_SENT:
-		
 			// Check if message received is a handshake
 			if ( handshake->pstrlen == 19 ) {
+				data_len = sizeof ( message );
+				handshake = iobuf->data;
+				DBG ( "BT received handshake length:\t %zd\n\n", data_len );
 				// process received handshake then send own
 				if ( bt_rx_handshake ( peer, handshake ) == 0 ) {
 					peer->state = BT_PEER_HANDSHAKE_RCVD;
-					printf ( "Peer's info_hash is the same.\n" );
-				}
-				
+					DBG ( "BT peer's info_hash is the same.\n" );
+				}		
 			}
-			
 			break;
 		case BT_PEER_HANDSHAKE_RCVD:
 			// handshake sent to peer, waiting for ack
-			// send peer handshake	 
+			// send peer handshake
 		default:
-			printf ( "Some data received from TCP.\n" );
+			DBG ( "BT some data received from TCP.\n" );
+			/** Sanity check of the message */
+			data_len = sizeof ( message->id ) + sizeof ( message->payload );
+			assert ( message->len == data_len );
+			DBG ( "BT original message length:\t %d\n", message->len );
+			DBG ( "BT received message length:\t %zd\n\n", data_len );
+			// call appropriate message processor
+
 			break;			
 	}
 	
@@ -360,11 +352,10 @@ static void bt_step ( struct bt_request *bt ) {
 	
 	if ( bt )
 	//	printf("*");
-		
-	//if ( ! xfer_window ( &bt->listener ) )
-	//	return;	
 	
 	/** If there are no peers get list from tracker */
+
+	/** If there are no connected peers */	
 	if ( ! bt_count_peers ( bt ) ) {
 		
 		/** The following is just a test scenario
@@ -376,9 +367,7 @@ static void bt_step ( struct bt_request *bt ) {
 		ref_init ( &peer->uri->refcnt, NULL );
 		uri_get ( peer->uri );	
 		if ( ! bt_socket_open ( peer ) )
-			printf ( "Test socket opened!\n" );
-		
-		
+			DBG ( "BT test socket opened!\n" );
 		
 		/** Initialize peer URI */
 		//peer->uri = 
@@ -391,21 +380,21 @@ static void bt_step ( struct bt_request *bt ) {
 		
 		//bt_tx_handshake ( peer );
 		
-		//printf ( "Handshake sent!\n" );
+		//DBG ( "BT Handshake sent!\n" );
 		
 		/** Test scenario ends here */
 		return;	
 	}
 	
-	//printf ( "%d\n", bt_count_peers ( bt ) );
+	//DBG ( "BT %d\n", bt_count_peers ( bt ) );
 	struct bt_peer *peer;
 	list_for_each_entry ( peer, &bt->peers, list ) {
-		//printf ( "+" );
+		//DBG ( "BT +" );
 		if ( xfer_window ( &peer->socket ) && peer->state == BT_PEER_CREATED ) {
 			bt_tx_handshake ( peer );
 			peer->state = BT_PEER_HANDSHAKE_SENT;
 			bt_tx_keep_alive ( peer );
-			printf ( "BT Handshake sent!\n" );
+			DBG ( "BT handshake sent!\n" );
 		}
 	}
 		
@@ -474,30 +463,27 @@ static int bt_socket_open (struct bt_peer *peer) {
 	struct interface *socket;
 	int rc;
 
-	peer = bt_create_peer ( peer->bt );
-	if ( !peer )
-		return -ENOMEM;
-	
-
 	/* Open socket */
 	memset ( &server, 0, sizeof ( server ) );
 	server.st_port = htons ( uri_port ( uri, 80 ) );
 	socket = &peer->socket;
 	
-	printf ( "Opening socket!\n" );
-	printf ( "URI Scheme: %s\n", uri->scheme );
-	printf ( "URI Host: %s\n", uri->host );
-	printf ( "URI Port: %s\n", uri->port );
+	DBG ( "BT opening socket!\n" );
+	DBG ( "BT uri scheme: %s\n", uri->scheme );
+	DBG ( "BT uri host: %s\n", uri->host );
+	DBG ( "BT uri port: %s\n", uri->port );
 	
 	if ( ( rc = xfer_open_named_socket ( socket, SOCK_STREAM,
 					     ( struct sockaddr * ) &server,
 					     uri->host, NULL ) ) != 0 )
-		return rc; 
+		goto err; 
 	
 	/** If there are no errors, add peer to list */
 	list_add ( &peer->list, &peer->bt->peers );
-	
 	return 0;
+err:
+	bt_peer_free ( &peer->refcnt );
+	return rc;
 }
 
 /** Do handshake with a peer */ 
@@ -514,18 +500,19 @@ static int bt_tx_handshake ( struct bt_peer *peer ) {
 	memcpy(message + 48, peer->bt->peerid, 20); 
 
 	//int i = 1;
-	//printf ( "BT Message: " );
+	//DBG ( "BT BT Message: " );
 	//while ( i < BT_HANDSHAKELEN ) {
 	//	printf (  "%c", message[i] );
 	//	i++; 
 	//}
-	//printf ( "\n" );
+	//DBG ( "BT \n" );
 
 	return xfer_deliver_raw ( &peer->socket, message, sizeof ( message ) );
 }
 
 /** Create KEEP-ALIVE message */
 static int bt_tx_keep_alive ( struct bt_peer *peer ) {
+	DBG ( "BT sending KEEP ALIVE to %p", peer );
 	return xfer_printf ( &peer->socket, "%c%c%c%c", 0,0,0,0 );
 }
 
@@ -536,6 +523,9 @@ static int bt_tx_have ( struct bt_peer *peer, uint32_t index ) {
 	message[3] = 5; // length = 5
 	message[4] = 4; // id = 4
 	memcpy ( message + 5, &index, sizeof ( index ) ); 
+
+	DBG ( "BT sending HAVE to %p", peer );
+
 	return xfer_deliver_raw ( &peer->socket, message, sizeof ( message ) );
 } 
 
@@ -548,6 +538,9 @@ static int bt_tx_request ( struct bt_peer *peer, uint32_t index, uint32_t begin,
 	memcpy ( message + 5, &index, sizeof ( index ) );
 	memcpy ( message + 9, &begin, sizeof ( begin ) );
 	memcpy ( message + 13, &length, sizeof ( length ) );
+
+	DBG ( "BT sending REQUEST to %p", peer );
+
 	return xfer_deliver_raw ( &peer->socket, message, sizeof ( message ) );
 }
 
@@ -560,12 +553,15 @@ static int bt_tx_cancel ( struct bt_peer *peer, uint32_t index, uint32_t begin, 
 	memcpy ( message + 5, &index, sizeof ( index ) );
 	memcpy ( message + 9, &begin, sizeof ( begin ) );
 	memcpy ( message + 13, &length, sizeof ( length ) );
+
+	DBG ( "BT sending CANCEL to %p", peer );
+
 	return xfer_deliver_raw ( &peer->socket, message, sizeof ( message ) );
 }
 
 /** Send PIECE message */
 static int bt_tx_piece ( struct bt_peer *peer, uint32_t index, uint32_t begin, struct io_buffer *iobuf ) {
-	
+
 	struct bt_piece *piece;
 	int rc = 0;
 	
@@ -579,8 +575,10 @@ static int bt_tx_piece ( struct bt_peer *peer, uint32_t index, uint32_t begin, s
 	piece->id = 7;
 	piece->index = index;
 	piece->begin = begin;
-	xfer_deliver_iob ( &peer->socket, iobuf );
-	return rc;
+
+	DBG ( "BT sending PIECE to %p", peer );
+
+	return xfer_deliver_iob ( &peer->socket, iobuf );
 }
 
 /** Process handshake from peer */
@@ -589,13 +587,12 @@ static int bt_rx_handshake ( struct bt_peer *peer,
 	
 	int i;
 	int rc = 0;
-	
+
 	/** Check if info_hash match */
 	for ( i = 0; i < 20; i++ ) {
 		if ( peer->bt->info_hash[i] != handshake->info_hash[i] )
-			rc = -1;
-	}
-		
+			return -EBTHM;
+	}	
 	return rc;
 }
 
@@ -717,7 +714,7 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	return 0;
 	
  err:
- 	printf ( "Error in creating BT request.\n ");
+ 	DBG ( "BT error in creating BT request.\n ");
  	return rc;
 	
 }

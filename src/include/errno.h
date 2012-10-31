@@ -755,6 +755,11 @@ static inline void euniq_discard ( int dummy __unused, ... ) {}
 #define EINFO_EXDEV __einfo ( PXENV_STATUS_FAILURE, 0x4f, 0, \
 			      "Improper link" )
 
+/** Handshake mismatch */
+#define EBTHM __einfo_error ( EINFO_EBTHM )
+#define EINFO_EBTHM __einfo ( PXENV_STATUS_FAILURE, 0x43, 0, \
+			       "Handshake mismatch" )
+
 /** @} */
 
 extern int errno;
