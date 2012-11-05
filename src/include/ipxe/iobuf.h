@@ -45,7 +45,7 @@ struct io_buffer {
 	/** End of data */
 	void *tail;
 	/** End of the buffer */
-        void *end;
+    void *end;
 };
 
 /**
