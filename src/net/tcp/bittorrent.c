@@ -179,6 +179,8 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	/** We are still unsure how to handle this */
 	while ( iobuf && iob_len ( iobuf ) ) {
 		
+		data_len = iob_len ( iobuf );
+
 		/** Check in which state is the peer right now. */
 		switch ( peer->state ) {
 		/** Peer is waiting for handshake */
@@ -215,7 +217,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					}
 					iob_pull ( iobuf, BT_PREFIXLEN );
 				} else {
-					return 0; // skip
+					return 0; // skip wait for more bytes
 				}
 			}
 
@@ -234,8 +236,16 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 						DBG ( "BT error sending INTERESTED to peer %p\n", peer );
 					if ( bt_tx_request ( peer, 0, 0,  16 * 1024 ) != 0 )
 						DBG ( "BT error sending REQUEST to peer %p\n", peer );
-						//bt_tx_request ( peer, 1, 0,  16 * 1024 );
-						//bt_tx_request ( peer, 2, 0,  16 * 1024 );
+						bt_tx_request ( peer, 1, 0,  16 * 1024 );
+						bt_tx_request ( peer, 2, 0,  16 * 1024 );
+						bt_tx_request ( peer, 3, 0,  16 * 1024 );
+						bt_tx_request ( peer, 4, 0,  16 * 1024 );
+						bt_tx_request ( peer, 5, 0,  16 * 1024 );
+						bt_tx_request ( peer, 6, 0,  16 * 1024 );
+						bt_tx_request ( peer, 7, 0,  16 * 1024 );
+						bt_tx_request ( peer, 8, 0,  16 * 1024 );
+						bt_tx_request ( peer, 9, 0,  16 * 1024 );
+						bt_tx_request ( peer, 10, 0,  16 * 1024 );
 					break;
 				case BT_INTERESTED:
 					DBG ( "BT INTERESTED received\n" );
@@ -253,17 +263,23 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					DBG ( "BT REQUEST received\n" );
 					break;
 				case BT_PIECE:
-					peer->remaining = 0;
-					peer->rx_len = 0;
-					peer->rx_id = 0;
-					memcpy ( iob_put ( peer->rx_buffer, data_len ) , iobuf->data, data_len ); 
+					memcpy ( iob_put ( peer->rx_buffer, peer->remaining ) , iobuf->data, peer->remaining ); 
 					DBG ( "BT PIECE received\n" );
 					DBG ( "BT rx_buffer length: %zd\n", iob_len ( peer->rx_buffer ) );
+					
 					// Add code to process piece here
 					// For now we remove the contents of rx_buffer
 					iob_empty ( peer->rx_buffer );
+					
+					// Deliver piece to upper layer
+					xfer_deliver_iob ( iob_disown ( peer->rx_buffer ) );
+					// Reallocate buffer
+					peer->rx_buffer = alloc_iob ( sizeof ( 18 * 1024 ) );
+
+					iob_pull ( iobuf, peer->remaining );
+					DBG ( "BT iobuf length: %zd\n", iob_len ( iobuf ) );
 					// We put return here to skip code lines below
-					return 0;
+					goto done;
 				case BT_CANCEL:
 					DBG ( "BT CANCEL received\n" );
 					break;
@@ -274,10 +290,11 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 
 				DBG ( "BT removing %zd bytes from buffer\n", peer->rx_len );
 				iob_pull ( iobuf, peer->rx_len ); 
-				data_len -= peer->remaining;
+			done:
+				//data_len -= peer->remaining;
 				peer->remaining = 0;
 				peer->rx_len = 0;
-				peer->rx_id = 0;
+				peer->rx_id = 0;				
 			} else if ( peer->remaining && ( peer->remaining > data_len ) ) {
 				DBG ( "BT message remaining %zd\n", peer->remaining );
 				peer->remaining -= data_len;
