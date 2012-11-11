@@ -169,6 +169,8 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	struct bt_message *message = iobuf->data;
 	struct bt_handshake *handshake = iobuf->data;
 	size_t data_len = iob_len ( iobuf );
+	uint32_t index;
+	uint32_t begin;
 
 	DBG ( "BT received buffer length: %zd\n", data_len );
 
@@ -269,10 +271,22 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					
 					// Add code to process piece here
 					// For now we remove the contents of rx_buffer
-					iob_empty ( peer->rx_buffer );
+					//iob_empty ( peer->rx_buffer );
 					
+					// Remove <id> from piece message 
+					iob_pull ( peer->rx_buffer, 1 );
+					// Copy and delete <index> from message
+					memcpy ( &index, peer->rx_buffer, 4 );
+					iob_pull ( peer->rx_buffer, 4 );
+					// Copy and delete <begin> from message
+					memcpy ( &begin, peer->rx_buffer, 4 );
+					iob_pull ( peer->rx_buffer, 4 );  
+
 					// Deliver piece to upper layer
-					xfer_deliver_iob ( iob_disown ( peer->rx_buffer ) );
+					struct xfer_metadata meta;
+					meta.flags = XFER_FL_ABS_OFFSET;
+					meta.offset = ( index * BT_PIECE_SIZE ) + begin;
+					xfer_deliver ( &peer->socket, iob_disown ( peer->rx_buffer ), &meta );  
 					// Reallocate buffer
 					peer->rx_buffer = alloc_iob ( sizeof ( 18 * 1024 ) );
 

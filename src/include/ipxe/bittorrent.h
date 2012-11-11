@@ -16,6 +16,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 #define BT_PREFIXLEN 4
 #define BT_HEADER 5
+#define BT_PIECE_SIZE 16 * 1024
+#define BT_BLOCK_SIZE 16 * 1024
 
 #define BT_CHOKE 0
 #define BT_UNCHOKE 1
