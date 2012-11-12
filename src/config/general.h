@@ -102,6 +102,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 //#define	IMAGE_BZIMAGE		/* Linux bzImage image support */
 //#define	IMAGE_COMBOOT		/* SYSLINUX COMBOOT image support */
 //#define	IMAGE_EFI		/* EFI image support */
+//#define	IMAGE_SDI		/* SDI image support */
 
 /*
  * Command-line commands to include
@@ -120,6 +121,9 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define MENU_CMD		/* Menu commands */
 #define LOGIN_CMD		/* Login command */
 #define TIME_CMD		/* Time commands */
+#define SYNC_CMD		/* Sync command */
+//#define NSLOOKUP_CMD		/* DNS resolving command */
+//#define TIME_CMD		/* Time commands */
 //#define DIGEST_CMD		/* Image crypto digest commands */
 //#define LOTEST_CMD		/* Loopback testing commands */
 //#define VLAN_CMD		/* VLAN commands */

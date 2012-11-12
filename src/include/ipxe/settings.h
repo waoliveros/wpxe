@@ -269,6 +269,8 @@ extern int fetch_uuid_setting ( struct settings *settings,
 extern void clear_settings ( struct settings *settings );
 extern int setting_cmp ( struct setting *a, struct setting *b );
 
+extern struct settings * find_child_settings ( struct settings *parent,
+					       const char *name );
 extern const char * settings_name ( struct settings *settings );
 extern struct settings * find_settings ( const char *name );
 extern struct setting * find_setting ( const char *name );
@@ -280,10 +282,16 @@ extern int fetchf_setting ( struct settings *settings, struct setting *setting,
 extern int storef_setting ( struct settings *settings,
 			    struct setting *setting,
 			    const char *value );
-extern int storef_named_setting ( const char *name, const char *value );
+extern int store_named_setting ( const char *name,
+				 struct setting_type *default_type,
+				 const void *data, size_t len );
+extern int storef_named_setting ( const char *name,
+				  struct setting_type *default_type,
+				  const char *value );
 extern int fetchf_named_setting ( const char *name, char *name_buf,
 				  size_t name_len, char *value_buf,
 				  size_t value_len );
+extern int fetchf_named_setting_copy ( const char *name, char **data );
 extern char * expand_settings ( const char *string );
 
 extern struct setting_type setting_type_string __setting_type;
@@ -366,7 +374,7 @@ static inline int delete_setting ( struct settings *settings,
  * @ret rc		Return status code
  */
 static inline int delete_named_setting ( const char *name ) {
-	return storef_named_setting ( name, NULL );
+	return store_named_setting ( name, NULL, NULL, 0 );
 }
 
 /**

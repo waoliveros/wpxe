@@ -92,6 +92,9 @@ REQUIRE_OBJECT ( linux_console );
 #ifdef CONSOLE_VMWARE
 REQUIRE_OBJECT ( vmconsole );
 #endif
+#ifdef CONSOLE_DEBUGCON
+REQUIRE_OBJECT ( debugcon );
+#endif
 
 /*
  * Drag in all requested network protocols
@@ -187,6 +190,9 @@ REQUIRE_OBJECT ( comboot_resolv );
 #ifdef IMAGE_EFI
 REQUIRE_OBJECT ( efi_image );
 #endif
+#ifdef IMAGE_SDI
+REQUIRE_OBJECT ( sdi );
+#endif
 
 /*
  * Drag in all requested commands
@@ -249,6 +255,9 @@ REQUIRE_OBJECT ( cpuid_cmd );
 #endif
 #ifdef SYNC_CMD
 REQUIRE_OBJECT ( sync_cmd );
+#endif
+#ifdef NSLOOKUP_CMD
+REQUIRE_OBJECT ( nslookup_cmd );
 #endif
 
 /*

@@ -486,6 +486,7 @@ int register_netdev ( struct net_device *netdev ) {
  err_probe:
 	for_each_table_entry_continue_reverse ( driver, NET_DRIVERS )
 		driver->remove ( netdev );
+	clear_settings ( netdev_settings ( netdev ) );
 	unregister_settings ( netdev_settings ( netdev ) );
  err_register_settings:
 	return rc;
@@ -570,6 +571,7 @@ void unregister_netdev ( struct net_device *netdev ) {
 		driver->remove ( netdev );
 
 	/* Unregister per-netdev configuration settings */
+	clear_settings ( netdev_settings ( netdev ) );
 	unregister_settings ( netdev_settings ( netdev ) );
 
 	/* Remove from device list */
@@ -671,13 +673,6 @@ int net_tx ( struct io_buffer *iobuf, struct net_device *netdev,
 	     const void *ll_source ) {
 	struct ll_protocol *ll_protocol = netdev->ll_protocol;
 	int rc;
-
-	/* Force a poll on the netdevice to (potentially) clear any
-	 * backed-up TX completions.  This is needed on some network
-	 * devices to avoid excessive losses due to small TX ring
-	 * sizes.
-	 */
-	netdev_poll ( netdev );
 
 	/* Add link-layer header */
 	if ( ( rc = ll_protocol->push ( netdev, iobuf, ll_dest, ll_source,

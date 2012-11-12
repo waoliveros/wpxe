@@ -263,6 +263,9 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define ERRFILE_menu_cmd	      ( ERRFILE_OTHER | 0x002d0000 )
 #define ERRFILE_validator	      ( ERRFILE_OTHER | 0x002e0000 )
 #define ERRFILE_ocsp		      ( ERRFILE_OTHER | 0x002f0000 )
+#define ERRFILE_nslookup	      ( ERRFILE_OTHER | 0x00300000 )
+#define ERRFILE_efi_snp_hii	      ( ERRFILE_OTHER | 0x00310000 )
+#define ERRFILE_readline	      ( ERRFILE_OTHER | 0x00320000 )
 
 /** @} */
 

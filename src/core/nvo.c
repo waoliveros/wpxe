@@ -192,8 +192,8 @@ static int nvo_save ( struct nvo_block *nvo ) {
  * @v setting		Setting
  * @ret applies		Setting applies within this settings block
  */
-static int nvo_applies ( struct settings *settings __unused,
-			 struct setting *setting ) {
+int nvo_applies ( struct settings *settings __unused,
+		  struct setting *setting ) {
 
 	return dhcpopt_applies ( setting->tag );
 }
@@ -296,7 +296,8 @@ int register_nvo ( struct nvo_block *nvo, struct settings *parent ) {
 		goto err_load;
 
 	/* Register settings */
-	if ( ( rc = register_settings ( &nvo->settings, parent, "nvo" ) ) != 0 )
+	if ( ( rc = register_settings ( &nvo->settings, parent,
+					NVO_SETTINGS_NAME ) ) != 0 )
 		goto err_register;
 
 	DBGC ( nvo, "NVO %p registered\n", nvo );
