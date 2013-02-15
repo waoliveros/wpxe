@@ -133,6 +133,12 @@ struct bt_peer {
 	/** List of buffers */
 	struct list_head buffers;
 
+	/** Num of pieces received from this peer */
+	int pieces_received;
+
+	/** Index of next piece to download **/
+	int next_piece;
+
 };
 
 struct bt_message {
