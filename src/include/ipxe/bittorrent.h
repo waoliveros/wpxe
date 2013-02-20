@@ -10,9 +10,7 @@
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <time.h>
-
-/** BitTorrent default port */
-#define BITTORRENT_PORT 49155
+#include <ipxe/bitmap.h>
 
 #define BT_PREFIXLEN 4
 #define BT_HEADER 5
@@ -78,6 +76,9 @@ struct bt_request {
 	* List of registered peers
 	*/
 	struct list_head peers;
+
+	/** Piece Bitmap */
+	struct bitmap bitmap;
 	
 };
 
@@ -171,7 +172,7 @@ struct bt_piece {
 	uint8_t id;
 	uint32_t index;
 	uint32_t begin;
-	uint8_t *block;
+	void *block;
 };
 
 enum bt_peer_state {
@@ -179,7 +180,8 @@ enum bt_peer_state {
 	BT_PEER_HANDSHAKE_SENT,
 	BT_PEER_HANDSHAKE_RCVD,
 	BT_PEER_LEECHING,
-	BT_PEER_SEEDING
+	BT_PEER_SEEDING,
+	BT_PEER_HANDSHAKE_EXPECTED
 };
 
 enum bt_peer_flags {
