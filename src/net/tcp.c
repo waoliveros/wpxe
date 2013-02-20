@@ -946,31 +946,6 @@ static int tcp_rx_syn ( struct tcp_connection *tcp, uint32_t seq,
         /* Mark SYN as received, SYN+ACK as sent */
         tcp->tcp_state |= ( TCP_STATE_SENT ( TCP_SYN | TCP_ACK ) |
                             TCP_STATE_RCVD ( TCP_SYN ) );			
-                            
-        /* Create new listening connection. */
-        /**
-        struct tcp_connection *new_tcp;
-        printf ( "New TCP connection created." );
-        new_tcp = zalloc ( sizeof ( *new_tcp ) );
-        if ( ! new_tcp )
-            return -ENOMEM;
-        ref_init ( &new_tcp->refcnt, NULL );
-        intf_init ( &new_tcp->xfer, &tcp_xfer_desc, &new_tcp->refcnt );
-        new_tcp->prev_tcp_state = TCP_CLOSED;
-        new_tcp->tcp_state = TCP_LISTEN;
-        tcp_dump_state ( new_tcp );
-        new_tcp->snd_seq = random();
-        INIT_LIST_HEAD ( &new_tcp->tx_queue );
-        INIT_LIST_HEAD ( &new_tcp->rx_queue );
-        new_tcp->local_port = LISTEN_PORT;
-        */
-        /* Add to list of TCP connections */
-        //list_add_tail ( &new_tcp->list, &tcp_conns );
-        
-        /* Open fresh interface. */
-        //xfer_open_child ( &tcp->xfer, &new_tcp->xfer );
-        
-        
     } else {
         /* Mark SYN as received and start sending ACKs with each packet */
         tcp->tcp_state |= ( TCP_STATE_SENT ( TCP_ACK ) |
@@ -1397,6 +1372,11 @@ static int tcp_rx ( struct io_buffer *iobuf,
         new_tcp->rcv_win = tcp->rcv_win;
         new_tcp->ts_val = tcp->ts_val;
         new_tcp->ts_recent = tcp->ts_recent;
+        new_tcp->snd_win_scale = tcp->snd_win_scale;
+        new_tcp->rcv_win_scale = tcp->rcv_win_scale;
+        new_tcp->max_rcv_win = tcp->max_rcv_win;
+        new_tcp->pending_flags = tcp->pending_flags;
+        new_tcp->pending_data = tcp->pending_data;
         
         timer_init ( &new_tcp->timer, tcp_expired, &new_tcp->refcnt );
 		timer_init ( &new_tcp->wait, tcp_wait_expired, &new_tcp->refcnt );
