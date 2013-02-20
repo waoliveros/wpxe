@@ -94,7 +94,7 @@ size_t freemem;
  *
  * Currently fixed at 10MB.
  */
-#define HEAP_SIZE ( 1024 * 1024 * 10 )
+#define HEAP_SIZE ( 1024 * 1024 * 50 )
 
 /** The heap itself */
 static char heap[HEAP_SIZE] __attribute__ (( aligned ( __alignof__(void *) )));
