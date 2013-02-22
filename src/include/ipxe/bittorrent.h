@@ -12,10 +12,15 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <time.h>
 #include <ipxe/bitmap.h>
 
+// Experimental parameters
+#define BT_MAXRETRIES 5
+#define BT_NUMOFNODES 20
+#define BT_MAXNUMOFPEERS 5
+#define BT_REQUESTS 5
+#define BT_PIECE_SIZE 16 * 1024
+
 #define BT_PREFIXLEN 4
 #define BT_HEADER 5
-#define BT_PIECE_SIZE 16 * 1024
-#define BT_BLOCK_SIZE 16 * 1024
 
 #define BT_CHOKE 0
 #define BT_UNCHOKE 1
@@ -27,6 +32,14 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define BT_PIECE 7
 #define BT_CANCEL 8
 #define BT_PORT 9
+
+
+/** Record of peers to connect. For experimetns only. */
+struct bt_record {
+	int id;
+	int retries;
+	int connected;
+};
 
 /**
  * A BitTorrent client
@@ -61,7 +74,7 @@ struct bt_request {
 	/** The current torrent info hash */
 	uint8_t * info_hash; 
 	
-	/** This client's peer id */
+	/** This bt client's peer id */
 	uint8_t * peerid;
 	
 	/** The pointer to the downloader image.
@@ -79,6 +92,21 @@ struct bt_request {
 
 	/** Piece Bitmap */
 	struct bitmap bitmap;
+
+	/**  
+	* This node's id, only used for experiments
+	**/
+	int id;
+
+	/** 
+	* Where are we in the download process?
+	*/
+	int state;
+
+	/**
+	*
+	*/
+	struct bt_record bt_records[BT_MAXNUMOFPEERS];
 	
 };
 
@@ -184,6 +212,14 @@ enum bt_peer_state {
 	BT_PEER_HANDSHAKE_EXPECTED
 };
 
+enum bt_state {
+	BT_CONNECTING_TO_PEERS = 0,
+	BT_SENDING_HANDSHAKE,
+	BT_DOWNLOADING,
+	BT_SEEDING,
+	BT_COMPLETE
+};
+
 enum bt_peer_flags {
 	/** This client is choking the peer */
 	BT_PEER_AM_CHOKING =	0x01,
@@ -193,10 +229,6 @@ enum bt_peer_flags {
 	BT_PEER_CHOKING = 		0x04,
 	/** The peer is interested in this client */
 	BT_PEER_INTERESTED =	0x08,
-	
-//	BT_PEER_HANDSHAKE_SENT = 0x10,
-//	BT_PEER_HANDSHAKE_RECEIVED = 0x20
-	
 };
 
 extern int bt_open_filter ( struct interface *xfer, struct uri *uri,
@@ -264,6 +296,21 @@ static uint8_t * bt_str_info_hash ( char * str ) {
 	
 	return info_hash;
 	
+}
+
+static void bt_compute_records ( struct bt_request * bt ) {
+	int i; 
+
+	DBG ( "BT compute peer IPs and record\n" );
+	for ( i = 0; i < BT_MAXNUMOFPEERS; i++ ) {
+		bt->bt_records[i].retries = 0;
+		bt->bt_records[i].connected = 0;
+		if ( bt->id + i + 1 > BT_NUMOFNODES ) {
+			bt->bt_records[i].id = 0;
+		} else {
+			bt->bt_records[i].id = bt->id + i + 1;
+		}
+	}
 }					
 
 #endif /* _IPXE_BITTORRENT_H */
