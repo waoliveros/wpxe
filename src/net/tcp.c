@@ -1315,11 +1315,7 @@ static int tcp_rx ( struct io_buffer *iobuf,
     *	craete a new listening connection,
     *	and add it to the list of tcp connections.
     */
-    if ( tcp->tcp_state == TCP_LISTEN ) {		
-        
-        /** Copy peer details */
-        //memcpy ( &tcp->peer, st_src, sizeof ( tcp->peer ) );
-        //tcp->peer.st_port = tcphdr->src;
+    if ( tcp->tcp_state == TCP_LISTEN ) {
         
         /** Create new TCP connection */
         struct tcp_connection *new_tcp;
@@ -1342,12 +1338,10 @@ static int tcp_rx ( struct io_buffer *iobuf,
         list_for_each_entry ( queued, &tcp->rx_queue, list ) {
         	count++;
         }
-        // printf ( "TCP RX queue: %d\n", count );
         count = 0;
         list_for_each_entry ( queued, &tcp->tx_queue, list ) {
         	count++;
         }
-        // printf ( "TCP TX queue: %d\n", count );
         
         
         /** Move queues */ 
@@ -1357,15 +1351,10 @@ static int tcp_rx ( struct io_buffer *iobuf,
         
         /** Copy port details of peer */
         memcpy ( &new_tcp->peer, st_src, sizeof ( struct sockaddr_tcpip ) );
-        //memset ( &new_tcp->peer, 0, sizeof ( new_tcp->peer ) );
-        //new_tcp->peer.st_family = st_src->st_family;
         new_tcp->peer.st_port = tcphdr->src;
-        //new_tcp->peer.st_port = tcphdr->src;
-        
-        // printf ( "ST FAMILY %d\n", st_src->st_family );
-        // printf ( "ST PORT   %d\n", st_src->st_port );
         
         /** Copy other values from previous connection */
+        new_tcp->snd_seq = tcp->snd_seq;
         new_tcp->snd_sent = tcp->snd_sent;
         new_tcp->snd_win = tcp->snd_win;
         new_tcp->rcv_ack = tcp->rcv_ack;
@@ -1377,10 +1366,11 @@ static int tcp_rx ( struct io_buffer *iobuf,
         new_tcp->max_rcv_win = tcp->max_rcv_win;
         new_tcp->pending_flags = tcp->pending_flags;
         new_tcp->pending_data = tcp->pending_data;
+
+        DBG ( "CLONED TCP\n" );
         
         timer_init ( &new_tcp->timer, tcp_expired, &new_tcp->refcnt );
 		timer_init ( &new_tcp->wait, tcp_wait_expired, &new_tcp->refcnt );
-        
         
         /* Add to list of TCP connections */
         list_add_tail ( &new_tcp->list, &tcp_conns );
@@ -1390,11 +1380,8 @@ static int tcp_rx ( struct io_buffer *iobuf,
         tcp->tcp_state = TCP_LISTEN;
         tcp_dump_state ( tcp );
         tcp->snd_seq = random();
-        //tcp->tx_queue = NULL;
-        //tcp->rx_queue = NULL;
         INIT_LIST_HEAD ( &tcp->tx_queue );
         INIT_LIST_HEAD ( &tcp->rx_queue );
-        
         tcp = new_tcp;
     }
 
@@ -1415,11 +1402,11 @@ static int tcp_rx ( struct io_buffer *iobuf,
             tcp->new_tcp_created == 0 ) {
             
             if ( listener ) {
-                // printf ( "TCP Opening fresh interface for child connection.\n" );
+                //printf ( "TCP Opening fresh interface for child connection.\n" );
                 xfer_open_child ( &listener->xfer, &tcp->xfer );
                 tcp->new_tcp_created++;
             } else {
-                // printf ( "TCP NO reference to listener connection!\n" );
+                //printf ( "TCP NO reference to listener connection!\n" );
             }
         }
 	}
