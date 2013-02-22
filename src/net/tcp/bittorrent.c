@@ -421,7 +421,34 @@ static void bt_step ( struct bt_request *bt ) {
 			// Check if all connected
 			// if ( connectedtoall ) {
 			//	bt->state = BT_DOWNLOADING;
-			//} 
+			//}
+
+			int connected_to_all = 1;
+			for ( i = 0; i < BT_MAXNUMOFPEERS; i++ ) {
+				if ( bt->bt_records[i].id > 0 && bt->bt_records[i].connected == 1 ) {
+					continue;
+				} else {
+					connected_to_all = 0;
+					break;
+				}
+			}
+			if ( connected_to_all ) {
+				bt->state = BT_SENDING_HANDSHAKE;
+			}
+
+			break;
+		case BT_SENDING_HANDSHAKE:
+			// Send handshake to all peers
+			DBG ( "BT sending handshake to all peers\n" );
+			struct bt_peer *peer;
+			list_for_each_entry ( peer, &bt->peers, list ) {
+				if ( peer->state == BT_PEER_CREATED && xfer_window ( &peer->socket ) ) {
+					bt_tx_handshake ( peer );
+					peer->state = BT_PEER_HANDSHAKE_SENT;
+					DBG ( "BT handshake sent to peer %p\n", peer );
+				}
+			}
+			bt_count_peers ( bt );
 			break;
 		case BT_DOWNLOADING:
 			// Continue with download
@@ -432,42 +459,6 @@ static void bt_step ( struct bt_request *bt ) {
 		case BT_COMPLETE:
 			break;
 	} 
-
-	/** If there are no connected peers */	
-	if ( ! bt_count_peers ( bt ) ) {
-
-	} else {
-
-		struct bt_peer *peer;
-		list_for_each_entry ( peer, &bt->peers, list ) {
-			//DBG ( "BT +" );
-			if ( peer->state == BT_PEER_CREATED && xfer_window ( &peer->socket ) ) {
-				bt_tx_handshake ( peer );
-				peer->state = BT_PEER_HANDSHAKE_SENT;
-				DBG ( "BT handshake sent!\n" );
-			}
-
-			if ( peer->state == BT_PEER_HANDSHAKE_RCVD ) {
-
-			}
-		}
-	}
-		
-	/* Check if download is finished */
-	// If finished, we return to upper layer.
-	
-	/* Check if tracker communication must be made */
-	// If no connections, contact tracker and update list.
-	
-	/* Check total number of connections, and create new ones if needed */
-	// If num of connections is lower than threshold, connect to more.
-	// Create new TCP connection to selected peer. bt_connect()
-	// Send handshake to selected peer.
-	// bt_tx_handshake ()
-	// Wait for handshake to finish.
-	
-	/* Send a request */
-	
 	return;
 }
 
