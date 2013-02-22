@@ -61,13 +61,13 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 #define BITTORRENT_PORT 45501
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
+
 #define BT_NUMOFPIECES 3214
 #define BT_FILESIZE 50 * 1024 * 1024
 // dsl-4.4.10-initrd.iso 52.7 MB - 66KB 804
 //#define BT_TEST_HASH "d73fcc244c629b5f498599a3c478e0f549a7a63e"
 // dsl-4.4.10-initrd.iso 52.7 MB - 16KB 3214 pieces 
 #define BT_TEST_HASH "0bfd2e8c7b603aec481d6b32296f29aee524207c"
-#define BT_REQUESTS 5
 // miku.jpg 1.4MB 
 //#define BT_TEST_HASH "4c0e766e8bbe53baa0410a5a698c4b3916224c0f"
 
@@ -178,8 +178,8 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 	// global counter for packets
 	num_of_packets_received++;
 
-	DBG2 ("BT packets received: %d\n", num_of_packets_received);
-	DBG2 ( "BT received buffer length: %zd\n", data_len );
+	DBG ("BT packets received: %d\n", num_of_packets_received);
+	DBG ( "BT received buffer length: %zd\n", data_len );
 
 	/** We are still unsure how to handle this */
 	while ( iobuf && iob_len ( iobuf ) ) {
@@ -385,27 +385,57 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 */
 static void bt_step ( struct bt_request *bt ) {
 	
-	int rc = 0; 
+	int rc = 0;
+	int i = 0;
 
-	// DBG ( "BT count peers: %d\n", bt_count_peers ( bt ) );
-	// DBG ( "*" );
-	// // /** If there are no connected peers */	
+	switch ( bt->state ) {
+		case BT_CONNECTING_TO_PEERS:
+			for ( i = 0; i < BT_MAXNUMOFPEERS; i++ ) {
+				// If ID is legit, not connected, and retries are not maxed out
+				if ( bt->bt_records[i].id > 0
+					&& bt->bt_records[i].connected == 0 
+					&& bt->bt_records[i].retries < BT_MAXRETRIES ) {
+					// Connect to peer
+					struct bt_peer *peer;
+					peer = bt_create_peer ( bt );
+					char *uri = "tcp://192.168.4.XX:45501";
+					// Modify pos 16 and 17
+					uri[16] = bt->bt_records[i].id / 10 + 48;
+					uri[17] = bt->bt_records[i].id % 10 + 48;
+					peer->uri = parse_uri ( uri );
+					ref_init ( &peer->uri->refcnt, NULL );
+					uri_get ( peer->uri );
+					// Open socket
+					if ( ( rc = bt_socket_open ( peer ) ) != 0 ) {
+						DBG ( "BT cannot connect to peer ");
+						// Remove bt reference from bt_create_peer
+						bt_peer_close ( peer, rc );
+					} else { 
+						DBG ( "BT connected to %s:%s\n", peer->uri->host, peer->uri->port );
+						/** If there are no errors, add peer to list */
+						list_add ( &peer->list, &bt->peers );
+					}
+					return;	
+				} 
+			}
+			// Check if all connected
+			// if ( connectedtoall ) {
+			//	bt->state = BT_DOWNLOADING;
+			//} 
+			break;
+		case BT_DOWNLOADING:
+			// Continue with download
+			break;
+		case BT_SEEDING:
+			// Undefined yet
+			break;
+		case BT_COMPLETE:
+			break;
+	} 
+
+	/** If there are no connected peers */	
 	if ( ! bt_count_peers ( bt ) ) {
-		
-		struct bt_peer *peer;
-		peer = bt_create_peer ( bt );
-		peer->uri = parse_uri ( "tcp://192.168.4.11:45501" );
-		ref_init ( &peer->uri->refcnt, NULL );
-		uri_get ( peer->uri );	
-		
-		if ( ( rc = bt_socket_open ( peer ) ) != 0 ) {
-			DBG ( "BT cannot connect to peer ");
-			// Remove bt reference from bt_create_peer
-			bt_peer_close ( peer, rc );
-		} else { 
-			DBG ( "BT connected to %s:%s\n", peer->uri->host, peer->uri->port );
-		}
-		return;	
+
 	} else {
 
 		struct bt_peer *peer;
@@ -441,10 +471,17 @@ static void bt_step ( struct bt_request *bt ) {
 	return;
 }
 
+static size_t bt_peer_xfer_window ( struct bt_peer *peer ) {
+	/* New block commands may be issued only when we are idle */
+	peer = peer;
+	return 1;
+}
+
 /** BitTorrent peer socket interface operations */
 static struct interface_operation bt_peer_operations[] = {
 	INTF_OP ( intf_close, struct bt_peer *, bt_peer_close ),
-	INTF_OP ( xfer_deliver, struct bt_peer *, bt_peer_socket_deliver )
+	INTF_OP ( xfer_deliver, struct bt_peer *, bt_peer_socket_deliver ),
+	INTF_OP ( xfer_window, struct bt_peer *, bt_peer_xfer_window )
 };
 
 /** BitTorrent peer socket interface descriptor */
@@ -516,9 +553,6 @@ static int bt_socket_open (struct bt_peer *peer) {
 					     ( struct sockaddr * ) &server,
 					     uri->host, NULL ) ) != 0 )
 		goto err; 
-	
-	/** If there are no errors, add peer to list */
-	list_add ( &peer->list, &peer->bt->peers );
 	return 0;
 err:
 	bt_peer_close ( peer, rc );
@@ -689,8 +723,6 @@ static int bt_xfer_open_child ( struct bt_request *bt,
 
 	/** Add new peer to list of BTpeers */
 	list_add ( &peer->list, &bt->peers );
-	
-	bt_tx_keep_alive ( peer ) ;
 
 	DBG ( "BT remote peer connected\n" );
 
@@ -731,11 +763,14 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	int rc;
 	
 	DBG ( "BT creating bt request\n" );
-	DBG ( "BT uri->host: \"%s\"\n", uri->host );
 	
 	bt = zalloc ( sizeof ( *bt ) );
 	if ( ! bt )
 		return -ENOMEM;
+	bt->state = BT_CONNECTING_TO_PEERS;
+	bt->id = ( int ) strtoul ( uri->host, NULL, 10 );
+	DBG ( "BT this client's ID is \"%d\"\n", bt->id );
+	bt_compute_records ( bt );
 	
 	/* Initialize refcnt of bt. Function bt_free is called when
 		refcnt drops to zero. */	
