@@ -209,8 +209,11 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 			if ( handshake->pstrlen == 19 ) {
 				DBG ( "BT received handshake length: %zd\n", data_len );
 				// process received handshake then send own
-				if ( bt_rx_handshake ( peer, handshake ) == 0 ) {
-					bt_tx_handshake ( peer );
+				if ( bt_rx_handshake ( peer, handshake ) == 0) {
+					if ( xfer_window ( &peer->socket ) != 0 )
+						bt_tx_handshake ( peer );
+					else
+						DBG ( "BT cannot send handshake, no window" );
 					peer->state = BT_PEER_HANDSHAKE_RCVD;
 					DBG ( "BT peer's info_hash is the same.\n" );
 					iob_pull ( iobuf, BT_HANDSHAKELEN );
@@ -398,10 +401,15 @@ static void bt_step ( struct bt_request *bt ) {
 					// Connect to peer
 					struct bt_peer *peer;
 					peer = bt_create_peer ( bt );
-					char *uri = "tcp://192.168.4.XX:45501";
+					char uri[] = "tcp://192.168.4.XX:45501";
 					// Modify pos 16 and 17
 					uri[16] = bt->bt_records[i].id / 10 + 48;
 					uri[17] = bt->bt_records[i].id % 10 + 48;
+
+					DBG ( "BT uri[16] = %c\n", bt->bt_records[i].id / 10 + 48 );
+					DBG ( "BT uri[17] = %c\n", bt->bt_records[i].id % 10 + 48 );
+					DBG ( "BT uri = %s\n", uri );
+
 					peer->uri = parse_uri ( uri );
 					ref_init ( &peer->uri->refcnt, NULL );
 					uri_get ( peer->uri );
@@ -414,32 +422,28 @@ static void bt_step ( struct bt_request *bt ) {
 						DBG ( "BT connected to %s:%s\n", peer->uri->host, peer->uri->port );
 						/** If there are no errors, add peer to list */
 						list_add ( &peer->list, &bt->peers );
+						bt->bt_records[i].connected = 1;
+					}
+					int connected_to_all = 1;
+					for ( i = 0; i < BT_MAXNUMOFPEERS; i++ ) {
+						if ( bt->bt_records[i].id > 0 && bt->bt_records[i].connected == 1 ) {
+							continue;
+						} else {
+							connected_to_all = 0;
+							break;
+						}
+					}
+					if ( connected_to_all ) {
+						bt->state = BT_SENDING_HANDSHAKE;
+						DBG ( "BT state transitioned to BT_SENDING_HANDSHAKE\n" );
 					}
 					return;	
 				} 
 			}
-			// Check if all connected
-			// if ( connectedtoall ) {
-			//	bt->state = BT_DOWNLOADING;
-			//}
-
-			int connected_to_all = 1;
-			for ( i = 0; i < BT_MAXNUMOFPEERS; i++ ) {
-				if ( bt->bt_records[i].id > 0 && bt->bt_records[i].connected == 1 ) {
-					continue;
-				} else {
-					connected_to_all = 0;
-					break;
-				}
-			}
-			if ( connected_to_all ) {
-				bt->state = BT_SENDING_HANDSHAKE;
-			}
-
 			break;
 		case BT_SENDING_HANDSHAKE:
 			// Send handshake to all peers
-			DBG ( "BT sending handshake to all peers\n" );
+			DBG ( "." );
 			struct bt_peer *peer;
 			list_for_each_entry ( peer, &bt->peers, list ) {
 				if ( peer->state == BT_PEER_CREATED && xfer_window ( &peer->socket ) ) {
@@ -448,6 +452,19 @@ static void bt_step ( struct bt_request *bt ) {
 					DBG ( "BT handshake sent to peer %p\n", peer );
 				}
 			}
+			int handshook_all = 1;
+			list_for_each_entry ( peer, &bt->peers, list ) {
+				if ( peer->state == BT_PEER_HANDSHAKE_SENT ) {
+					continue;
+				} else {
+					handshook_all = 0;
+					break;
+				}
+			}
+			if ( handshook_all ) {
+				bt->state = BT_DOWNLOADING;
+			}
+
 			bt_count_peers ( bt );
 			break;
 		case BT_DOWNLOADING:
@@ -462,17 +479,22 @@ static void bt_step ( struct bt_request *bt ) {
 	return;
 }
 
-static size_t bt_peer_xfer_window ( struct bt_peer *peer ) {
-	/* New block commands may be issued only when we are idle */
-	peer = peer;
+static size_t bt_xfer_window ( struct bt_request *bt __unused ) {
 	return 1;
+}
+
+static size_t bt_peer_socket_window ( struct bt_peer *peer __unused ) {
+	/* Window is always open.  This is to prevent TCP from
+	 * stalling if our parent window is not currently open.
+	 */
+	return ( ~( ( size_t ) 0 ) );
 }
 
 /** BitTorrent peer socket interface operations */
 static struct interface_operation bt_peer_operations[] = {
 	INTF_OP ( intf_close, struct bt_peer *, bt_peer_close ),
 	INTF_OP ( xfer_deliver, struct bt_peer *, bt_peer_socket_deliver ),
-	INTF_OP ( xfer_window, struct bt_peer *, bt_peer_xfer_window )
+	INTF_OP ( xfer_window, struct bt_peer *, bt_peer_socket_window )
 };
 
 /** BitTorrent peer socket interface descriptor */
@@ -481,7 +503,7 @@ static struct interface_descriptor bt_peer_desc =
 	
 /** BitTorrent process descriptor */	
 static struct process_descriptor bt_process_desc =
-	PROC_DESC_ONCE ( struct bt_request, process, bt_step );
+	PROC_DESC ( struct bt_request, process, bt_step );
 
 /** Create a BitTorrent peer OBJECT ONLY
 *   and add to list of peers. No initiation of connection here. 
@@ -733,7 +755,8 @@ static struct interface_descriptor bt_listener_desc =
 
 /** BitTorrent data transfer interface operations */
 static struct interface_operation bt_xfer_operations[] = {
-	INTF_OP ( intf_close, struct bt_request *, bt_close )
+	INTF_OP ( intf_close, struct bt_request *, bt_close ),
+	INTF_OP ( xfer_window, struct bt_request *, bt_xfer_window )
 };
 
 /** BitTorrent data transfer interface descriptor */
@@ -759,6 +782,8 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	if ( ! bt )
 		return -ENOMEM;
 	bt->state = BT_CONNECTING_TO_PEERS;
+	DBG ( "BT state transitioned to BT_CONNECTING_TO_PEERS\n" );
+
 	bt->id = ( int ) strtoul ( uri->host, NULL, 10 );
 	DBG ( "BT this client's ID is \"%d\"\n", bt->id );
 	bt_compute_records ( bt );
