@@ -14,8 +14,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 // Experimental parameters
 #define BT_MAXRETRIES 5
-#define BT_NUMOFNODES 20
-#define BT_MAXNUMOFPEERS 5
+#define BT_NUMOFNODES 2
+#define BT_MAXNUMOFPEERS 1
 #define BT_REQUESTS 5
 #define BT_PIECE_SIZE 16 * 1024
 
@@ -305,7 +305,7 @@ static void bt_compute_records ( struct bt_request * bt ) {
 	for ( i = 0; i < BT_MAXNUMOFPEERS; i++ ) {
 		bt->bt_records[i].retries = 0;
 		bt->bt_records[i].connected = 0;
-		if ( bt->id + i + 1 > BT_NUMOFNODES ) {
+		if ( bt->id + i + 1 >= BT_NUMOFNODES + 10) {
 			bt->bt_records[i].id = 0;
 		} else {
 			bt->bt_records[i].id = bt->id + i + 1;
