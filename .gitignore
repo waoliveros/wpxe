@@ -4,3 +4,7 @@
 *.plist
 
 src/compile.sh
+
+*.iso
+
+src/util/bittorrent/dsl-4.4.10-initrd.iso-66KB.torrent
