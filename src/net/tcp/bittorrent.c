@@ -63,7 +63,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define BITTORRENT_PORT 45501
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
 
-#define BT_NUMOFPIECES 3214 // 3214
+#define BT_NUMOFPIECES 200 // 3214
 #define BT_FILESIZE 50 * 1024 * 1024
 // dsl-4.4.10-initrd.iso 52.7 MB - 66KB 804
 //#define BT_TEST_HASH "d73fcc244c629b5f498599a3c478e0f549a7a63e"
@@ -195,7 +195,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 			// Check if message received is a handshake
 			if ( handshake->pstrlen == 19 ) {
 				DBG ( "BT received HANDSHAKE length: %zd\n", data_len );
-				// process received handshake then send own
+				// process received handshake
 				if ( bt_rx_handshake ( peer, handshake ) == 0 ) {
 					peer->state = BT_PEER_HANDSHAKE_RCVD;
 					DBG ( "BT peer's info_hash is the same.\n" );
@@ -226,6 +226,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					// [exp] hack
 					if ( peer->bt->id == 11 )  {
 						peer->bt->state = BT_DOWNLOADING;
+						DBG ( "BT state transitioned to BT_DOWNLOADING\n" );
 					}
 
 				}	
@@ -242,7 +243,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					assert ( ntohl ( message->len ) );
 					peer->rx_len = ntohl ( message->len );
 					peer->rx_id = message->id;
-					DBG2 ( "BT prefix length: %zd\n", peer->rx_len );
+					DBG ( "BT prefix length: %zd\n", peer->rx_len );
 					if ( peer->rx_len == 0 ) {
 						DBG ( "BT KEEP ALIVE received\n" );
 						//bt_tx_request ( peer, 17, 0, BT_PIECE_SIZE );
@@ -297,7 +298,6 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					DBG ( "BT HAVE received\n" );
 					break;
 				case BT_REQUEST:
-					DBG ( "BT REQUEST received\n" );
 
 					// Remove ID
 					iob_pull ( iobuf, 1 );
@@ -310,13 +310,16 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					// Length
 					memcpy ( &length, iobuf->data, 4 ); 
 					iob_pull ( iobuf, 4 );
-					//bt_rx_request ( ntohl ( index ) , ntohl ( begin ) ,  ntohl ( length ) );
-					
-					bt_tx_piece ( peer, ntohl ( index ), ntohl ( begin ) );
-					
-					goto done;
 
+					DBG ( "BT REQUEST %d, %d, %d received\n", ntohl(index), ntohl(begin), ntohl(length) );
+					
+					if ( bt_tx_piece ( peer, ntohl ( index ), ntohl ( begin ) ) != 0 ) {
+						DBG ( "BT cannot send PIECE\n" );
+					}
+
+					goto done;
 					break;
+
 				case BT_PIECE:
 
 					memcpy ( iob_put ( peer->rx_buffer, peer->remaining ) , iobuf->data, peer->remaining ); 
@@ -334,25 +337,10 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					memcpy ( &begin, peer->rx_buffer->data, 4 );
 					iob_pull ( peer->rx_buffer, 4 );
 
-					DBG ( "BT %d PIECE %08x received\n", id, ntohl ( index ) ) ;
+					DBG ( "BT %d PIECE %d received\n", id, ntohl ( index ) ) ;
 
-					//DBG ( "BT PIECE %08x received: %zd bytes\n", index, iob_len ( peer->rx_buffer ) );
 					peer->pieces_received++;
-
-					// if ( bt_tx_request ( peer, peer->pieces_received, 0,  BT_PIECE_SIZE ) != 0 )
-					// 	DBG ( "BT sending REQUEST %d to peer %p\n", peer->pieces_received, peer );
-
-					// if (peer->pieces_received % BT_REQUESTS == 0) {
-					// 	for ( i = peer->next_piece; i < peer->next_piece+BT_REQUESTS && i < BT_NUMOFPIECES; i++ ) {
-					// 		//while ( xfer_window ( &peer->socket ) <= 0 ) 
-					// 		if ( ( rc = bt_tx_request ( peer, i, 0, BT_PIECE_SIZE ) ) != 0 ) {
-					// 			DBG ( "BT cannot send REQUEST %d to peer %p code (%d)\n", i, peer, rc );
-					// 		} else {
-					// 			//DBG ( "BT sent REQUEST %d to peer %p\n", i, peer );
-					// 		}
-					// 	}
-					// }
-					//peer->next_piece+=BT_REQUESTS;
+					bitmap_set ( &peer->bt->bitmap, ntohl ( index ) );
 
 					// Deliver piece to upper layer
 					struct xfer_metadata meta;
@@ -364,14 +352,24 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 
 					// Incorrect code below, rewrite delivery
 					// xfer_deliver ( &peer->socket, iob_disown ( peer->rx_buffer ), &meta );  
-					free ( peer->rx_buffer ); 
+
+					iob_pull ( peer->rx_buffer, BT_PIECE_SIZE );
+					free_iob ( peer->rx_buffer ); 
 					// Reallocate buffer
 					peer->rx_buffer = alloc_iob ( BT_PIECE_SIZE + 9 );
 					if ( ! peer->rx_buffer ) {
 						DBG ( "BT cannot allocate peer %p rx buffer\n", peer ); 
+						free_iob ( iobuf );
 						return -ENOMEM;
 					}
-
+					DBG ( "BT freemem is %zd\n", freemem );
+					// Check if all pieces have been downloaded
+					if ( bitmap_full ( &peer->bt->bitmap ) ) {
+						peer->bt->state = BT_COMPLETE;
+						DBG ( "BT state transitioned to BT_COMPLETE\n" );
+					} else {
+						bt_tx_request ( peer, ntohl ( index ) + 1, 0, BT_PIECE_SIZE );
+					}
 					goto done;
 
 				case BT_CANCEL:
@@ -404,9 +402,11 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 			break;			
 		}
 	}
-
+	free_iob ( iobuf );
 	return rc;
 }
+
+int first_req = 1;
 
 /** BitTorrent process 
 	This function is always executed in the background. 
@@ -507,16 +507,19 @@ static void bt_step ( struct bt_request *bt ) {
 					} else {
 						if ( ! xfer_window ( &peer->socket ) )
 							return;
-						bt_tx_piece ( peer, peer->next_piece, 0 );
-						//bt_tx_request ( peer, peer->next_piece, 0, BT_PIECE_SIZE );
-						peer->next_piece += 1;
+						if ( first_req ) {
+							bt_tx_request ( peer, peer->next_piece, 0, BT_PIECE_SIZE );
+							peer->next_piece += 1;
+							first_req = 0; // exp hack
+						}
 					}
 				}
 			} else if ( bt->id == 10 ) {
 				// Check if we have pending pieces to send
+				// sleep ( 1 );
 				struct bt_peer *peer;
 				list_for_each_entry ( peer, &bt->peers, list ) {
-					bt_peer_xmit ( peer );
+				 	bt_peer_xmit ( peer );
 				}
 			}
 
@@ -584,7 +587,7 @@ static struct bt_peer * bt_create_peer ( struct bt_request *bt ) {
 	peer->state = BT_PEER_CREATED;
 
 	peer->pieces_received = 0;
-	peer->next_piece = 1;
+	peer->next_piece = 0;
 		
 	/** Initialize peer refcnt. Function bt_peer_free is called when counter
 		drops to zero. Initialize socket with descriptor. Increment peer
@@ -728,7 +731,7 @@ static int bt_tx_piece ( struct bt_peer *peer, uint32_t index, uint32_t begin __
 
 	uint32_t length_n = htonl ( 9 + BT_PIECE_SIZE );
 	uint32_t index_n = htonl ( index );
-	uint32_t begin_n = htonl ( 0 );
+	//uint32_t begin_n = 0;
 
 	iobuf = xfer_alloc_iob ( &peer->socket, 4 + 9 + BT_PIECE_SIZE);
 	if ( ! iobuf )
@@ -741,9 +744,9 @@ static int bt_tx_piece ( struct bt_peer *peer, uint32_t index, uint32_t begin __
 	data = iob_put ( iobuf, 4 ); //index
 	memcpy ( data, &index_n, 4 );
 	data = iob_put ( iobuf, 4 ); //begin
-	memcpy ( data, &begin_n, 4 );
+	//memcpy ( data, &begin_n, 4 );
+	memset ( data, 0, 4 );
 	iob_put ( iobuf, BT_PIECE_SIZE ); 
-
 
 	//piece = iob_put ( iobuf, 4 + 9 + BT_PIECE_SIZE);
 	//piece->len = htonl ( 9 + BT_PIECE_SIZE );
@@ -814,12 +817,13 @@ static int bt_xfer_open_child ( struct bt_request *bt,
 	
 	peer = bt_create_peer ( bt );
 
-	/** Expect to receive a handshake */
-	peer->state = BT_PEER_HANDSHAKE_EXPECTED;
-	
 	/** Check if peer is successfully allocated. */ 
 	if ( ! peer )
 		return -ENOMEM;
+
+	/** Expect to receive a handshake */
+	peer->state = BT_PEER_HANDSHAKE_EXPECTED;
+	
 
 	/** Plug peer socket and child interface from listening TCP connection. */
 	intf_plug_plug ( &peer->socket, child ); 	
