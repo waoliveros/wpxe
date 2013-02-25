@@ -63,7 +63,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define BITTORRENT_PORT 45501
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
 
-#define BT_NUMOFPIECES 200 // 3214
+#define BT_NUMOFPIECES 52 // 3214
 #define BT_FILESIZE 50 * 1024 * 1024
 // dsl-4.4.10-initrd.iso 52.7 MB - 66KB 804
 //#define BT_TEST_HASH "d73fcc244c629b5f498599a3c478e0f549a7a63e"
@@ -197,7 +197,6 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 				DBG ( "BT received HANDSHAKE length: %zd\n", data_len );
 				// process received handshake
 				if ( bt_rx_handshake ( peer, handshake ) == 0 ) {
-					peer->state = BT_PEER_HANDSHAKE_RCVD;
 					DBG ( "BT peer's info_hash is the same.\n" );
 					iob_pull ( iobuf, BT_HANDSHAKELEN );
 					if ( bt_tx_interested ( peer ) != 0 ) {
@@ -265,6 +264,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 				DBG ( "BT message complete\n" );
 				switch ( peer->rx_id ) {
 				case BT_CHOKE:
+					iob_pull ( iobuf, peer->rx_len );
 					break;	
 				case BT_UNCHOKE:
 					DBG ( "BT UNCHOKE received\n" );
@@ -279,23 +279,23 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 						if ( ( rc = bt_tx_request ( peer, i, 0, BT_PIECE_SIZE )) != 0 )
 							DBG ( "BT cannot send REQUEST %d to peer %p code (%d)\n", i, peer, rc );
 					}
-					peer->next_piece = 1;
-					peer->pieces_received = 0;
-
-					DBG ( "BT peer window: %zd\n", xfer_window ( &peer->socket ) );
-
-				break;
+					iob_pull ( iobuf, peer->rx_len );
+					break;
 				case BT_INTERESTED:
 					DBG ( "BT INTERESTED received\n" );
+					iob_pull ( iobuf, peer->rx_len );
 					break;
 				case BT_NOTINTERESTED:
 					DBG ( "BT NOT INTERESTED received\n" );
+					iob_pull ( iobuf, peer->rx_len );
 					break;
 				case BT_BITFIELD:
 					DBG ( "BT BITFIELD received\n" );
+					iob_pull ( iobuf, peer->rx_len );
 					break;
 				case BT_HAVE:
 					DBG ( "BT HAVE received\n" );
+					iob_pull ( iobuf, peer->rx_len );
 					break;
 				case BT_REQUEST:
 
@@ -310,14 +310,11 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					// Length
 					memcpy ( &length, iobuf->data, 4 ); 
 					iob_pull ( iobuf, 4 );
-
 					DBG ( "BT REQUEST %d, %d, %d received\n", ntohl(index), ntohl(begin), ntohl(length) );
-					
 					if ( bt_tx_piece ( peer, ntohl ( index ), ntohl ( begin ) ) != 0 ) {
 						DBG ( "BT cannot send PIECE\n" );
 					}
 
-					goto done;
 					break;
 
 				case BT_PIECE:
@@ -343,18 +340,17 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					bitmap_set ( &peer->bt->bitmap, ntohl ( index ) );
 
 					// Deliver piece to upper layer
-					struct xfer_metadata meta;
-					meta.flags = XFER_FL_ABS_OFFSET;
-					meta.offset = ( index * BT_PIECE_SIZE ) + begin;
+					// struct xfer_metadata meta;
+					// meta.flags = XFER_FL_ABS_OFFSET;
+					// meta.offset = ( ntohl ( index ) * BT_PIECE_SIZE ) + begin;
+					// xfer_deliver ( &peer->bt->xfer, iob_disown ( peer->rx_buffer ), &meta );  
 
 					// Send HAVE to all peers
 					// bt_tx_have_to_peers ( bt );
-
-					// Incorrect code below, rewrite delivery
-					// xfer_deliver ( &peer->socket, iob_disown ( peer->rx_buffer ), &meta );  
-
+					
 					iob_pull ( peer->rx_buffer, BT_PIECE_SIZE );
 					free_iob ( peer->rx_buffer ); 
+
 					// Reallocate buffer
 					peer->rx_buffer = alloc_iob ( BT_PIECE_SIZE + 9 );
 					if ( ! peer->rx_buffer ) {
@@ -363,6 +359,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 						return -ENOMEM;
 					}
 					DBG ( "BT freemem is %zd\n", freemem );
+
 					// Check if all pieces have been downloaded
 					if ( bitmap_full ( &peer->bt->bitmap ) ) {
 						peer->bt->state = BT_COMPLETE;
@@ -370,19 +367,18 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					} else {
 						bt_tx_request ( peer, ntohl ( index ) + 1, 0, BT_PIECE_SIZE );
 					}
-					goto done;
+					break;
 
 				case BT_CANCEL:
 					DBG ( "BT CANCEL received\n" );
+					iob_pull ( iobuf, peer->rx_len );
 					break;
 				case BT_PORT:
 					DBG ( "BT PORT received\n" );
+					iob_pull ( iobuf, peer->rx_len );
 					break;
 				}
-
-				DBG ( "BT removing %zd bytes from buffer\n", peer->rx_len );
-				iob_pull ( iobuf, peer->rx_len ); 
-			done:
+ 
 				peer->remaining = 0;
 				peer->rx_len = 0;
 				peer->rx_id = 0;
@@ -789,7 +785,8 @@ static int bt_rx_handshake ( struct bt_peer *peer,
 	for ( i = 0; i < 20; i++ ) {
 		if ( peer->bt->info_hash[i] != handshake->info_hash[i] )
 			return -EBTHM;
-	}	
+	}
+	peer->state = BT_PEER_HANDSHAKE_RCVD;	
 	return rc;
 }
 
