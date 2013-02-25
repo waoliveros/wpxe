@@ -129,6 +129,9 @@ struct bt_peer {
 	/** List of BitTorrent peers */
 	struct list_head list;
 
+	/** Pending piece queue */
+	struct list_head queue;
+
 	/** Socket interface */
 	struct interface socket;
 	
@@ -159,14 +162,11 @@ struct bt_peer {
 	/** Remaining length */
 	size_t remaining;
 
-	/** List of buffers */
-	struct list_head buffers;
-
 	/** Num of pieces received from this peer */
 	int pieces_received;
 
 	/** Index of next piece to download **/
-	int next_piece;
+	uint32_t next_piece;
 
 };
 
@@ -200,7 +200,12 @@ struct bt_piece {
 	uint8_t id;
 	uint32_t index;
 	uint32_t begin;
-	void *block;
+	//void *block;
+};
+
+struct bt_queue_piece {
+	struct bt_peer *peer;
+	struct bt_piece *piece;
 };
 
 enum bt_peer_state {

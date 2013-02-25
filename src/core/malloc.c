@@ -92,7 +92,7 @@ size_t freemem;
 /**
  * Heap size
  *
- * Currently fixed at 10MB.
+ * Currently fixed at 50MB.
  */
 #define HEAP_SIZE ( 1024 * 1024 * 50 )
 
