@@ -63,11 +63,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define BITTORRENT_PORT 45501
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
 
-<<<<<<< HEAD
-#define BT_NUMOFPIECES 10 // 3214
-=======
+
 #define BT_NUMOFPIECES 200 // 3214
->>>>>>> Revert "[bittorrent] Refactored iobuf processing from TCP"
 #define BT_FILESIZE 50 * 1024 * 1024
 // dsl-4.4.10-initrd.iso 52.7 MB - 66KB 804
 //#define BT_TEST_HASH "d73fcc244c629b5f498599a3c478e0f549a7a63e"
