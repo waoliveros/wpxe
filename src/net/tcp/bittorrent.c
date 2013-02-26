@@ -63,7 +63,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define BITTORRENT_PORT 45501
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
 
-#define BT_NUMOFPIECES 52 // 3214
+#define BT_NUMOFPIECES 10 // 3214
 #define BT_FILESIZE 50 * 1024 * 1024
 // dsl-4.4.10-initrd.iso 52.7 MB - 66KB 804
 //#define BT_TEST_HASH "d73fcc244c629b5f498599a3c478e0f549a7a63e"
@@ -868,7 +868,14 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	struct interface *listener;
 	struct downloader *downloader;
 	int rc;
-	
+
+	char new_uri[] = "192.168.4.XX";
+	new_uri[10] = uri->host[0];
+	new_uri[11] = uri->host[1];
+
+	printf ( "BT old uri : %s\n", uri->host );
+	printf ( "BT new_uri : %s\n", new_uri );
+
 	DBG ( "BT creating bt request\n" );
 	
 	bt = zalloc ( sizeof ( *bt ) );
@@ -912,7 +919,7 @@ static int bt_open ( struct interface *xfer, struct uri *uri ) {
 	listener = &bt->listener;
 	
 	if ( ( rc = xfer_open_named_socket ( listener, SOCK_STREAM, 
-										NULL, uri->host, NULL ) ) != 0 )
+										NULL, new_uri, NULL ) ) != 0 )
 		goto err;
 	
 	/* Attach to parent interface, mortalise self, and return */
