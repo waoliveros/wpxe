@@ -64,7 +64,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define BT_HANDSHAKELEN (1 + 19 + 8 + 20 + 20)
 
 
-#define BT_NUMOFPIECES 200 // 3214
+
 #define BT_FILESIZE 50 * 1024 * 1024
 // dsl-4.4.10-initrd.iso 52.7 MB - 66KB 804
 //#define BT_TEST_HASH "d73fcc244c629b5f498599a3c478e0f549a7a63e"
@@ -90,6 +90,7 @@ static int bt_tx_request ();
 static int bt_tx_piece ();
 // static int bt_tx_cancel ();
 static int bt_peer_xmit ();
+static uint32_t bt_next_piece ();
 
 /** Hack variables */
 //static int has_peers = 0;
@@ -369,7 +370,7 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 						peer->bt->state = BT_COMPLETE;
 						DBG ( "BT state transitioned to BT_COMPLETE\n" );
 					} else {
-						bt_tx_request ( peer, ntohl ( index ) + 1, 0, BT_PIECE_SIZE );
+						bt_tx_request ( peer, bt_next_piece ( peer->bt ), 0, BT_PIECE_SIZE );
 					}
 					goto done;
 
@@ -500,21 +501,37 @@ static void bt_step ( struct bt_request *bt ) {
 
 			if ( bt->id == 11) { 
 				struct bt_peer *peer;
-				list_for_each_entry ( peer, &bt->peers, list ) {
-					if ( peer->next_piece > BT_NUMOFPIECES ) {
-						bt->state = BT_COMPLETE;
-						DBG ( "BT state transitioned to BT_COMPLETE\n" );
-						return;
-					} else {
-						if ( ! xfer_window ( &peer->socket ) )
-							return;
-						if ( first_req ) {
-							bt_tx_request ( peer, peer->next_piece, 0, BT_PIECE_SIZE );
-							peer->next_piece += 1;
-							first_req = 0; // exp hack
-						}
-					}
+				peer = list_first_entry ( &bt->peers, struct bt_peer, list );
+				if ( ! xfer_window ) {
+					return;
+				} else {
+
+					// Populate rem_pieces list in bt request
+					int i;
+					for ( i = 0; i < BT_NUMOFPIECES; i++ ) {
+						struct bt_rem_piece *rem_piece;
+						rem_piece = zalloc ( sizeof ( *rem_piece ) );
+						rem_piece->index = i;
+						list_add_tail ( &rem_piece->list, &bt->rem_pieces );
+					}  
+
+					bt_tx_request ( peer, bt_next_piece ( bt ), 0, BT_PIECE_SIZE); 
 				}
+				// list_for_each_entry ( peer, &bt->peers, list ) {
+				// 	if ( peer->next_piece > BT_NUMOFPIECES ) {
+				// 		bt->state = BT_COMPLETE;
+				// 		DBG ( "BT state transitioned to BT_COMPLETE\n" );
+				// 		return;
+				// 	} else {
+				// 		if ( ! xfer_window ( &peer->socket ) )
+				// 			return;
+				// 		if ( first_req ) {
+				// 			bt_tx_request ( peer, peer->next_piece, 0, BT_PIECE_SIZE );
+				// 			peer->next_piece += 1;
+				// 			first_req = 0; // exp hack
+				// 		}
+				// 	}
+				// }
 			} else if ( bt->id == 10 ) {
 				// Check if we have pending pieces to send
 				// sleep ( 1 );
@@ -749,12 +766,6 @@ static int bt_tx_piece ( struct bt_peer *peer, uint32_t index, uint32_t begin __
 	memset ( data, 0, 4 );
 	iob_put ( iobuf, BT_PIECE_SIZE ); 
 
-	//piece = iob_put ( iobuf, 4 + 9 + BT_PIECE_SIZE);
-	//piece->len = htonl ( 9 + BT_PIECE_SIZE );
-	//piece->id = ( uint8_t ) 7;
-	//piece->index = index; // exp not sure about safeness of this assignment
-	//piece->begin = htonl ( 0 );
-
 	DBG ( "BT queueing PIECE %08x to %p\n", index, peer );
 	DBG ( "BT freemem is %zd\n", freemem );
 	list_add_tail ( &iobuf->list, &peer->queue );
@@ -794,19 +805,27 @@ static int bt_rx_handshake ( struct bt_peer *peer,
 	return rc;
 }
 
-/** Process REQUEST from peer */
-// static int bt_rx_request ( struct bt_peer *peer, 
-// 						uint32_t index, uint32_t begin, uint32_t length ) {
-// 	int rc = 0;
-// 	DBG ( "BT processing REQUEST %d, %d, %d\n", index, begin, length );
-// 	// Check if bitmap is marked on index
-// 	// Send piece if yes
-// 	if ( bitmap_test ( &peer->bt->bitmap, index ) ) {
-// 		// if ( ( rc = bt_tx_piece ( peer, index, begin, length ) ) )
-// 		// 	DBG ( "BT cannot send PIECE %d, %d, %d\n", index, begin, length );
-// 	}
-// 	return rc;
-// }
+/** Calculate next piece to download */
+static uint32_t bt_next_piece ( struct bt_request *bt ) {
+	// Generate random number from 0 to size of undownloaded list
+	int random;
+	uint32_t index = 0;
+	int i = 0;
+	struct bt_rem_piece *rem_piece;
+	struct bt_rem_piece *tmp;
+
+	random = rand() % BT_NUMOFPIECES;
+	list_for_each_entry_safe ( rem_piece, tmp, &bt->rem_pieces, list ) {
+		if ( random == i ) {
+			 index = rem_piece->index;
+			 list_del ( &rem_piece->list );
+			 free ( rem_piece );
+			 break;
+		}
+		i++;
+	}
+	return index;
+}	
 
 /** Open child socket */
 static int bt_xfer_open_child ( struct bt_request *bt,

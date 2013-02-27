@@ -16,8 +16,10 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define BT_MAXRETRIES 5
 #define BT_NUMOFNODES 2
 #define BT_MAXNUMOFPEERS 1
+
 #define BT_REQUESTS 5
 #define BT_PIECE_SIZE 1024 * 1024
+#define BT_NUMOFPIECES 200 // 3214
 
 #define BT_PREFIXLEN 4
 #define BT_HEADER 5
@@ -104,9 +106,12 @@ struct bt_request {
 	int state;
 
 	/**
-	*
+	* Records of remote peer ids, and status
 	*/
 	struct bt_record bt_records[BT_MAXNUMOFPEERS];
+
+	/** List of remaining pieces */
+	struct list_head rem_pieces;
 	
 };
 
@@ -208,6 +213,11 @@ struct bt_queue_piece {
 	struct bt_piece *piece;
 };
 
+struct bt_rem_piece {
+	struct list_head list;
+	uint32_t index;
+};
+
 enum bt_peer_state {
 	BT_PEER_CREATED = 0,
 	BT_PEER_HANDSHAKE_SENT,
@@ -303,6 +313,7 @@ static uint8_t * bt_str_info_hash ( char * str ) {
 	
 }
 
+// Compute IDs of remote peers
 static void bt_compute_records ( struct bt_request * bt ) {
 	int i; 
 
@@ -316,6 +327,6 @@ static void bt_compute_records ( struct bt_request * bt ) {
 			bt->bt_records[i].id = bt->id + i + 1;
 		}
 	}
-}					
+}				
 
 #endif /* _IPXE_BITTORRENT_H */
