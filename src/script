@@ -1,0 +1,85 @@
+#!ipxe
+
+dhcp
+#imgfetch http://192.168.4.1/~wigi/100
+#goto done
+iseq ${ip} 192.168.4.10 || goto 11
+time imgfetch bt://10
+goto done
+:11
+iseq ${ip} 192.168.4.11 || goto 12
+time imgfetch bt://11
+goto done
+:12
+iseq ${ip} 192.168.4.12 || goto 13
+time imgfetch bt://12
+goto done
+:13
+iseq ${ip} 192.168.4.13 || goto 14
+time imgfetch bt://13
+goto done
+:14
+iseq ${ip} 192.168.4.14 || goto 15
+time imgfetch bt://14
+goto done
+:15
+iseq ${ip} 192.168.4.15 || goto 16
+time imgfetch bt://15
+goto done
+:16
+iseq ${ip} 192.168.4.16 || goto 17
+time imgfetch bt://16
+goto done
+:17
+iseq ${ip} 192.168.4.17 || goto 18
+time imgfetch bt://17
+goto done
+:18
+iseq ${ip} 192.168.4.18 || goto 19
+time imgfetch bt://18
+goto done
+:19
+iseq ${ip} 192.168.4.19 || goto 20
+time imgfetch bt://19
+goto done
+:20
+iseq ${ip} 192.168.4.20 || goto 21
+time imgfetch bt://20
+goto done
+:21
+iseq ${ip} 192.168.4.21 || goto 22
+time imgfetch bt://21
+goto done
+:22
+iseq ${ip} 192.168.4.22 || goto 23
+time imgfetch bt://22
+goto done
+:23
+iseq ${ip} 192.168.4.23 || goto 24
+time imgfetch bt://23
+goto done
+:24
+iseq ${ip} 192.168.4.24 || goto 25
+time imgfetch bt://24
+goto done
+:25
+iseq ${ip} 192.168.4.25 || goto 26
+time imgfetch bt://25
+goto done
+:26
+iseq ${ip} 192.168.4.26 || goto 27
+time imgfetch bt://26
+goto done
+:27
+iseq ${ip} 192.168.4.27 || goto 28
+time imgfetch bt://27
+goto done
+:28
+iseq ${ip} 192.168.4.28 || goto 29
+time imgfetch bt://28
+goto done
+:29
+iseq ${ip} 192.168.4.29 || goto done
+time imgfetch bt://29
+:done
+shell

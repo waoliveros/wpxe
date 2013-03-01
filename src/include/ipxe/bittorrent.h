@@ -11,15 +11,16 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <time.h>
 #include <ipxe/bitmap.h>
+#include <ipxe/pending.h>
 
 // Experimental parameters
 #define BT_MAXRETRIES 5
-#define BT_NUMOFNODES 2
+#define BT_NUMOFNODES 3
 #define BT_MAXNUMOFPEERS 1
 
-#define BT_REQUESTS 5
-#define BT_PIECE_SIZE 1024 * 1024
-#define BT_NUMOFPIECES 200 // 3214
+#define BT_MAXREQUESTS 5
+#define BT_PIECE_SIZE 1024
+#define BT_NUMOFPIECES 1024 * 100 // 3214
 
 #define BT_PREFIXLEN 4
 #define BT_HEADER 5
@@ -28,8 +29,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define BT_UNCHOKE 1
 #define BT_INTERESTED 2
 #define BT_NOTINTERESTED 3
-#define BT_BITFIELD 4
-#define BT_HAVE 5
+#define BT_BITFIELD 5
+#define BT_HAVE 4
 #define BT_REQUEST 6
 #define BT_PIECE 7
 #define BT_CANCEL 8
@@ -112,6 +113,9 @@ struct bt_request {
 
 	/** List of remaining pieces */
 	struct list_head rem_pieces;
+
+	/** Num of rem_pieces */
+	int pieces_left;
 	
 };
 
@@ -173,12 +177,20 @@ struct bt_peer {
 	/** Index of next piece to download **/
 	uint32_t next_piece;
 
+	/** Pending requests */
+	unsigned int pending_requests;
+
+	/** Piece Bitmap */
+	struct bitmap bitmap;
+
+	/** identification */
+	int id;
+
 };
 
 struct bt_message {
 	uint32_t len;
 	uint8_t id;
-	void *payload;
 };
 
 struct bt_handshake {
@@ -251,15 +263,15 @@ extern int bt_open_filter ( struct interface *xfer, struct uri *uri,
 			      int ( * filter ) ( struct interface *,
 						 struct interface ** ) );
 						
-static uint8_t * bt_generate_peerid ( ) {
+static uint8_t * bt_generate_peerid ( int id ) {
 	uint8_t * peer_id;
 	int i = 7;
 	
 	peer_id = zalloc ( sizeof ( uint8_t ) * 20 );
 	
 	srandom ( time_now ( ) );
-	peer_id[0] = '-';
-	peer_id[1] = 'i';
+	peer_id[0] = id / 10 + 48; // old value is '-'
+	peer_id[1] = id % 10 + 48; // old value is 'i'
 	peer_id[2] = 'P';
 	peer_id[3] = '1';
 	peer_id[4] = '0';

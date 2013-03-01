@@ -26,6 +26,9 @@ FILE_LICENCE ( GPL2_OR_LATER );
  *
  */
 
+#define TIMED 1 // or 0
+#define START 1362056201LL 
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -34,6 +37,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <byteswap.h>
 #include <errno.h>
 #include <assert.h>
+#include <time.h>
 #include <ipxe/uri.h>
 #include <ipxe/refcnt.h>
 #include <ipxe/iobuf.h>
@@ -85,6 +89,9 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 /** Block size used for HTTP block device request */
 #define HTTP_BLKSIZE 512
+
+time_t start;
+time_t end;
 
 /** HTTP flags */
 enum http_flags {
@@ -218,6 +225,10 @@ static void http_close ( struct http_request *http, int rc ) {
 	intf_shutdown ( &http->socket, rc );
 	intf_shutdown ( &http->partial, rc );
 	intf_shutdown ( &http->xfer, rc );
+
+	end = time ( NULL );
+	printf ( "HTTP ended at %lld\n", end );
+	printf ( "HTTP time elapsed %lld\n", end - start );
 }
 
 /**
@@ -1324,6 +1335,15 @@ int http_open_filter ( struct interface *xfer, struct uri *uri,
 		       int ( * filter ) ( struct interface *xfer,
 					  const char *name,
 					  struct interface **next ) ) {
+	if ( TIMED ) {
+		printf ( "HTTP the time is now %lld\n", time ( NULL ) );
+		start = START; 
+		while ( time ( NULL ) < start );
+		printf ( "HTTP started at %lld\n", start );
+	} else {
+		start = time ( NULL );
+	}
+
 	struct http_request *http;
 	int rc;
 

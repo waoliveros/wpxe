@@ -19,6 +19,9 @@
 
 FILE_LICENCE ( GPL2_OR_LATER );
 
+#define TIMED 1 // or 0
+#define START 1362053379LL 
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -41,11 +44,18 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/uri.h>
 #include <ipxe/tftp.h>
 
+#include <time.h>
+
 /** @file
  *
  * TFTP protocol
  *
  */
+
+
+
+ time_t start;
+ time_t end;
 
 FEATURE ( FEATURE_PROTOCOL, "TFTP", DHCP_EB_FEATURE_TFTP, 1 );
 
@@ -188,6 +198,10 @@ static void tftp_done ( struct tftp_request *tftp, int rc ) {
 	intf_shutdown ( &tftp->socket, rc );
 	intf_shutdown ( &tftp->mc_socket, rc );
 	intf_shutdown ( &tftp->xfer, rc );
+
+	end = time ( NULL );
+	printf ( "TFTP ended at %lld\n", end );
+	printf ( "TFTP time elapsed %lld\n", end - start );
 }
 
 /**
@@ -1138,6 +1152,14 @@ static int tftp_core_open ( struct interface *xfer, struct uri *uri,
  * @ret rc		Return status code
  */
 static int tftp_open ( struct interface *xfer, struct uri *uri ) {
+	if ( TIMED ) {
+		printf ( "TFTP the time is now %lld\n", time ( NULL ) );
+		start = START; 
+		while ( time ( NULL ) < start );
+		printf ( "TFTP started at %lld\n", start );
+	} else {
+		start = time ( NULL );
+	}
 	return tftp_core_open ( xfer, uri, TFTP_PORT, NULL,
 				TFTP_FL_RRQ_SIZES );
 
