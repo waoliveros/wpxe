@@ -15,7 +15,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define DEFAULT_MIN_TIMEOUT ( TICKS_PER_SEC / 4 )
 
 /** Limit after which the timeout will be deemed permanent */
-#define DEFAULT_MAX_TIMEOUT ( 100 * TICKS_PER_SEC )
+#define DEFAULT_MAX_TIMEOUT ( 10 * TICKS_PER_SEC )
 
 /** A retry timer */
 struct retry_timer {

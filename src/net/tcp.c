@@ -797,15 +797,35 @@ static struct tcp_connection * tcp_demux ( unsigned int local_port,
                                             unsigned int peer_port ) {
     struct tcp_connection *tcp;
     struct tcp_connection *listener;
+    // int i = 1;
     listener = NULL;
-
+    // printf ( "\n\n------------------- TCP Connections -------------------\n" );
+    //list_for_each_entry ( tcp, &tcp_conns, list ) {
+    //    printf ( "\t%d.\tlocal_port: %d peer_port %d\n",
+    //                i++, local_port, ntohs ( tcp->peer.st_port ) );
+    //}
+    // printf ( "---------------------------------------------------------\n\n");
     list_for_each_entry ( tcp, &tcp_conns, list ) {
+        //printf ( "\tTCP CONN. local_port: %d peer_port %d\n",
+        //			local_port, ntohs ( tcp->peer.st_port ) );
+        //if ( tcp->tcp_state == TCP_LISTEN 
+        //            && tcp->local_port == local_port
+        //            && ntohs ( tcp->peer.st_port ) == 0 ) {
+        //    printf( "Entered condition 1.\n" );
+        //    printf ( "\tTCP selected. local_port: %d peer_port %d\n",
+        //            tcp->local_port, ntohs ( tcp->peer.st_port ) );
+        //    return tcp;
+        //} else 
         if ( tcp->tcp_state == TCP_LISTEN ) {
         	listener = tcp;
         }
+        
         if ( tcp->local_port == local_port 
            		&& ntohs ( tcp->peer.st_port ) == peer_port
                 && peer_port != 0 ) {
+           // printf( "TCP connection found.\n" );
+           // printf ( "\tTCP selected. local_port: %d peer_port %d\n",
+           //         tcp->local_port, ntohs ( tcp->peer.st_port ) );
             return tcp;
         }
     }
