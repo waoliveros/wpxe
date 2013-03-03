@@ -180,6 +180,7 @@ static int bt_count_peers ( struct bt_request *bt ) {
 static int bt_peer_socket_deliver ( struct bt_peer *peer,
 									struct io_buffer *iobuf,
 									struct xfer_metadata *meta __unused ) {
+
 	int rc = 0;
 	struct bt_message *message = iobuf->data;
 	struct bt_handshake *handshake = iobuf->data;
@@ -317,9 +318,10 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 
 					DBG ( "BT HAVE %d received\n", ntohl ( index ) );
 
+					// [hack] Ignore if HAVE came from leecher 
 					if ( peer->id > peer->bt->id ) {
 						goto done;
-					} // ignore have if we are the seeder
+					}
 
 					bitmap_set ( &peer->bitmap,  ntohl ( index ) );
 
@@ -387,14 +389,6 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					peer->pieces_received++;
 					bitmap_set ( &peer->bt->bitmap, ntohl ( index ) );
 
-					// Deliver piece to upper layer
-					struct xfer_metadata meta;
-					meta.flags = XFER_FL_ABS_OFFSET;
-					meta.offset = ( index * BT_PIECE_SIZE ) + begin;
-
-					// Incorrect code below, rewrite delivery
-					// xfer_deliver ( &peer->socket, iob_disown ( peer->rx_buffer ), &meta );  
-
 					iob_pull ( peer->rx_buffer, BT_PIECE_SIZE );
 					free_iob ( peer->rx_buffer ); 
 					// Reallocate buffer
@@ -406,7 +400,12 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 					}
 
 					// Send HAVE to all peers
-					bt_tx_have_to_peers ( peer->bt, ntohl ( index ) );
+					if ( 0 )
+						bt_tx_have_to_peers ( peer->bt, ntohl ( index ) );
+					// bt_tx_piece ( peer->bt->designated_peer, index, begin );
+
+					peer->bt->current_piece = ntohl ( index );
+					peer->bt->got_piece = 1;
 
 					DBG ( "BT freemem is %zd\n", freemem );
 					// Check if all pieces have been downloaded
@@ -419,8 +418,6 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 						printf ( "TFTP ended at %lld\n", end );
 						printf ( "TFTP time elapsed %lld\n", end - start );
 
-					} else if ( peer->bt->id == 11 ) {
-						bt_tx_request ( peer, bt_next_piece ( peer->bt ), 0, BT_PIECE_SIZE );
 					}
 					goto done;
 
@@ -453,7 +450,6 @@ static int bt_peer_socket_deliver ( struct bt_peer *peer,
 		}
 	}
 	free_iob ( iobuf );
-	bt_peer_xmit ( peer );
 	return rc;
 }
 
@@ -465,16 +461,21 @@ int first_req = 1;
 	to avoid blocking other functions.
 */
 static void bt_step ( struct bt_request *bt ) {
-	
+
 	int rc = 0;
 	int i = 0;
 
-	if ( bt->id == 10 + BT_NUMOFNODES - 1) {
-		process_del ( &bt->process );
+	if ( bt->id == 10 + BT_NUMOFNODES - 1 && bt->state != BT_SEEDING ) {
+		bt->state = BT_SEEDING;
 	}
 
 	switch ( bt->state ) {
 		case BT_CONNECTING_TO_PEERS:
+
+			bt->current_piece = 0;
+			bt->got_piece = 0;
+			bt->piece_sent = 0;
+
 			for ( i = 0; i < BT_MAXNUMOFPEERS; i++ ) {
 				// If ID is legit, not connected, and retries are not maxed out
 				if ( bt->bt_records[i].id > 0
@@ -562,7 +563,10 @@ static void bt_step ( struct bt_request *bt ) {
 				list_for_each_entry ( tmp, &bt->peers, list ) {
 					printf ( "BT tmp->id = %d\n", tmp->id );
 					if ( tmp->id == bt->id - 1 ) {
-						peer = tmp; 
+						peer = tmp;
+						bt->seeder = peer; 
+					} else if ( tmp->id == bt->id + 1 ) {
+						bt->leecher = tmp;
 					}
 				}
 				if ( ! peer ) {
@@ -589,15 +593,42 @@ static void bt_step ( struct bt_request *bt ) {
 
 					bt_tx_request ( peer, bt_next_piece ( bt ), 0, BT_PIECE_SIZE); 
 					//process_del ( &bt->process );
-					printf ( "BT removing process\n" );
-					bt->state = BT_SEEDING;
+					//printf ( "BT removing process\n" );
+					bt->state = BT_REQUESTING;
 				}
 
 			} else if ( bt->id == 10 || bt->id > 11 ) {
-				bt->state = BT_SEEDING;
+				bt->state = BT_REQUESTING;
 				//process_del ( &bt->process );
 			} 
 
+			break;
+		case BT_REQUESTING:
+			{}
+			struct bt_peer *tmp1;
+			list_for_each_entry_reverse ( tmp1, &bt->peers, list ) {
+			 	bt_peer_xmit ( tmp1 );
+			}
+			if ( ! bt->got_piece )
+				return;
+			bt->state = BT_UPLOADING;
+			bt_tx_have ( bt->leecher, bt->current_piece );
+			bt->got_piece = 0;
+			break;
+		case BT_UPLOADING:
+			{}
+			struct bt_peer *tmp2;
+			list_for_each_entry_reverse ( tmp2, &bt->peers, list ) {
+			 	bt_peer_xmit ( tmp2 );
+			}
+			if ( ! bt->piece_sent )
+				return;
+			// request next piece
+			if ( ! bitmap_full ( &bt->bitmap ) ) {
+				bt->state = BT_REQUESTING;
+				bt_tx_request ( bt->seeder, bt_next_piece ( bt ), 0, BT_PIECE_SIZE );
+				bt->piece_sent = 0;
+			}
 			break;
 		case BT_SEEDING:
 			// Undefined yet
@@ -610,6 +641,17 @@ static void bt_step ( struct bt_request *bt ) {
 		case BT_COMPLETE:
 			//bt_close ( bt, 0 ); 
 			break;
+		// case BT_REQUESTING:
+		// 	if ( ! xfer_window ( &bt->seeder->socket ) )
+		// 		return;
+		// 	bt_tx_request ( bt->seeder, bt_next_piece ( bt ), 0, BT_PIECE_SIZE); 
+		// 	bt->state = BT_UPLOADING;
+		// 	break;
+		// case BT_UPLOADING:
+		// 	if ( ! xfer_window ( &bt->leecher->socket ) )
+		// 		return;
+		// 	bt_tx_piece (  )
+		// 	break;
 	}
 	return;
 }
@@ -770,7 +812,7 @@ static int bt_tx_have ( struct bt_peer *peer, uint32_t index ) {
 
 	DBG ( "BT queueing HAVE %08x to %p\n", index, peer );
 	list_add_tail ( &iobuf->list, &peer->queue );
-	return bt_peer_xmit ( peer );
+	return 0;
 } 
 
 /** Send HAVE to peers 
@@ -818,7 +860,7 @@ static int bt_tx_request ( struct bt_peer *peer, uint32_t index, uint32_t begin,
 
 	DBG ( "BT queueing REQUEST %08x to %p\n", index, peer );
 	list_add_tail ( &iobuf->list, &peer->queue );
-	return bt_peer_xmit ( peer );
+	return 0;
 }
 
 /** Send CANCEL message */
@@ -869,7 +911,10 @@ static int bt_tx_piece ( struct bt_peer *peer, uint32_t index, uint32_t begin __
 	DBG ( "BT queueing PIECE %08x to %p\n", index, peer );
 	DBG2 ( "BT freemem is %zd\n", freemem );
 	list_add_tail ( &iobuf->list, &peer->queue );
-	return bt_peer_xmit ( peer );
+
+	peer->bt->piece_sent = 1;
+
+	return 0;
 }
 
 static int bt_peer_xmit ( struct bt_peer *peer ) {
@@ -878,23 +923,23 @@ static int bt_peer_xmit ( struct bt_peer *peer ) {
 	int rc = 0;
 
 	// Check if we have a pending piece and the window is open
+	if ( ! list_empty ( &peer->queue ) && xfer_window ( &peer->socket ) ) {
+		DBG2 ( "BT queue is not empty and window is open.\n" );
+		iobuf = list_first_entry ( &peer->queue, struct io_buffer, list );
+		list_del ( &iobuf->list );
+		rc = xfer_deliver_iob ( &peer->socket, iobuf );
+		DBG ( "BT sending iobuf from queue to %p\n", peer );
+	} else {
+		DBG2 ( "BT peer queue is empty or window is closed\n" );
+	}
+
 	// if ( ! list_empty ( &peer->queue ) && xfer_window ( &peer->socket ) ) {
 	// 	DBG ( "BT queue is not empty and window is open.\n" );
 	// 	iobuf = list_first_entry ( &peer->queue, struct io_buffer, list );
 	// 	list_del ( &iobuf->list );
 	// 	rc = xfer_deliver_iob ( &peer->socket, iobuf );
 	// 	DBG ( "BT sending iobuf from queue to %p\n", peer );
-	// } else {
-	// 	DBG ( "BT peer queue is empty or window is closed\n" );
 	// }
-
-	if ( ! list_empty ( &peer->queue ) && xfer_window ( &peer->socket ) ) {
-		DBG ( "BT queue is not empty and window is open.\n" );
-		iobuf = list_first_entry ( &peer->queue, struct io_buffer, list );
-		list_del ( &iobuf->list );
-		rc = xfer_deliver_iob ( &peer->socket, iobuf );
-		DBG ( "BT sending iobuf from queue to %p\n", peer );
-	}
 
 	return rc;
 }

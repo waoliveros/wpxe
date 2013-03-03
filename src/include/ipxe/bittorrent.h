@@ -15,12 +15,12 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 // Experimental parameters
 #define BT_MAXRETRIES 5
-#define BT_NUMOFNODES 3
+#define BT_NUMOFNODES 5
 #define BT_MAXNUMOFPEERS 1
 
 #define BT_MAXREQUESTS 5
 #define BT_PIECE_SIZE 1024
-#define BT_NUMOFPIECES 1024 * 100// 3214
+#define BT_NUMOFPIECES 1024// 3214
 
 #define BT_PREFIXLEN 4
 #define BT_HEADER 5
@@ -116,6 +116,19 @@ struct bt_request {
 
 	/** Num of rem_pieces */
 	int pieces_left;
+
+	/** Designated peer for linear overlay */
+	struct bt_peer *designated_peer;
+
+	/** Download peer */
+	struct bt_peer *seeder;
+
+	/** Upload peer */
+	struct bt_peer *leecher;
+
+	int got_piece;
+	int piece_sent;
+	uint32_t current_piece;
 	
 };
 
@@ -244,7 +257,9 @@ enum bt_state {
 	BT_SENDING_HANDSHAKE,
 	BT_DOWNLOADING,
 	BT_SEEDING,
-	BT_COMPLETE
+	BT_COMPLETE,
+	BT_REQUESTING,
+	BT_UPLOADING
 };
 
 enum bt_peer_flags {
