@@ -27,7 +27,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
  */
 
 #define TIMED 1 // or 0
-#define START 1362129388LL 
+#define START 1362056201LL 
 
 #include <stdint.h>
 #include <stdlib.h>

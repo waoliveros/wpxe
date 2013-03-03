@@ -1,7 +1,7 @@
 #!ipxe
 
 dhcp
-#imgfetch http://192.168.4.1/~wigi/200
+#imgfetch http://192.168.4.1/~wigi/100
 #goto done
 iseq ${ip} 192.168.4.10 || goto 11
 time imgfetch bt://10
