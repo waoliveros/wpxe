@@ -1,8 +1,5 @@
-iPXE README File
+This is an old fork of iPXE that I experimented on
+by applying some BitTorrent protocol elements.
 
-Quick start guide:
-
-   cd src
-   make
-
-For any more detailed instructions, see http://ipxe.org
+For any more detailed instructions on building and using iPXE,
+see the original documentation of iPXE at http://ipxe.org
